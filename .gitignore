@@ -102,3 +102,7 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+entity_pb2.py
+entity_pb2_grpc.py
+
