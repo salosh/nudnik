@@ -1,0 +1,41 @@
+/*
+ *   This file is part of Nudnik. <https://github.com/salosh/nudnik.git>
+ *
+ *   Nudnik is free software: you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation, either version 3 of the License, or
+ *   (at your option) any later version.
+ *
+ *   Nudnik is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package entity;
+
+service Parser{
+ rpc Parse(Request) returns (Response) {}
+}
+
+message Request {
+  string name      = 1;
+  int32  streamID  = 2;
+  int32  messageID = 3;
+  string timestamp = 4;
+  string meta      = 5;
+}
+
+message Response {
+  enum StatusCode {
+    OK = 0;
+    SERVER_ERROR = 1;
+    CLIENT_ERROR = 2;
+  }
+  StatusCode statusCode = 1;
+}
