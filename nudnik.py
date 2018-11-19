@@ -53,9 +53,9 @@ class ParseService(entity_pb2_grpc.ParserServicer):
             request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S')
         delta = (datetime.utcnow() - request_timestamp)
 
-        print('name-sid-idx={},mid={},ts={},delta={}'.format(request.name, request.messageID, request.timestamp, delta))
+        print('name-sid-idx={},mid={},ts={},delta={}'.format(request.name, request.message_id, request.timestamp, delta))
 #        print(request)
-        result = {'statusCode': 'OK'}
+        result = {'status_code': 'OK'}
 
         self.meta += 1
         now = datetime.utcnow()
@@ -97,7 +97,7 @@ class ParserClient(object):
             for load in cfg.load:
                 load = entity_pb2.Load(load_type=load[0], value=load[1])
                 load_list.append(load)
-        req = entity_pb2.Request(name=name, streamID=stream_id, messageID=message_id, timestamp=timestamp, meta=meta, load=load_list)
+        req = entity_pb2.Request(name=name, stream_id=stream_id, message_id=message_id, timestamp=timestamp, meta=meta, load=load_list)
         return self.stub.Parse(req)
 
 class Stream(threading.Thread):

@@ -35,11 +35,11 @@ message Load {
 }
 
 message Request {
-  string name      = 1;
-  int32  streamID  = 2;
-  int32  messageID = 3;
-  string timestamp = 4;
-  string meta      = 5;
+  string name        = 1;
+  int32  stream_id   = 2;
+  int32  message_id  = 3;
+  string timestamp   = 4;
+  string meta        = 5;
   repeated Load load = 6;
 }
 
@@ -49,6 +49,6 @@ message Response {
     SERVER_ERROR = 1;
     CLIENT_ERROR = 2;
   }
-  StatusCode statusCode = 1;
+  StatusCode status_code = 1;
 }
 
