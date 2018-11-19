@@ -1,0 +1,15 @@
+version: '3.4'
+
+services:
+  nudnik-server:
+    build: .
+    image: salosh/nudnik:latest
+    expose:
+      - 5410
+    ports:
+      - 5410:5410
+
+  nudnik-client:
+    build: .
+    image: salosh/nudnik:latest
+    command: python ./nudnik.py --streams 20 --mps 5 --name foobar --host nudnik-server --port 5410
