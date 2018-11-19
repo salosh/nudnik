@@ -17,9 +17,11 @@
 #
 
 import time
+import random
 from datetime import datetime
 import argparse
 import uuid
+import os
 import sys
 import threading
 import yaml
@@ -41,12 +43,18 @@ class ParseService(entity_pb2_grpc.ParserServicer):
         self.last_report = datetime.utcnow()
 
     def Parse(self, request, context):
-        try:
-            delta = datetime.utcnow() - datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S.%f')
-        except Exception:
-            delta = datetime.utcnow() - datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S')
 
-        print('{} - {} - {} - {}'.format(request.name, request.messageID, request.timestamp, delta))
+        for load in request.load:
+            generate_load(load)
+
+        try:
+            request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S.%f')
+        except Exception:
+            request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S')
+        delta = (datetime.utcnow() - request_timestamp)
+
+        print('name-sid-idx={},mid={},ts={},delta={}'.format(request.name, request.messageID, request.timestamp, delta))
+#        print(request)
         result = {'statusCode': 'OK'}
 
         self.meta += 1
@@ -84,7 +92,12 @@ class ParserClient(object):
         self.stub = entity_pb2_grpc.ParserStub(self.channel)
 
     def getParseForMessage(self, name, stream_id, message_id, timestamp, meta):
-        req = entity_pb2.Request(name=name, streamID=stream_id, messageID=message_id, timestamp=timestamp, meta=meta)
+        load_list = list()
+        if cfg.load is not None:
+            for load in cfg.load:
+                load = entity_pb2.Load(load_type=load[0], value=load[1])
+                load_list.append(load)
+        req = entity_pb2.Request(name=name, streamID=stream_id, messageID=message_id, timestamp=timestamp, meta=meta, load=load_list)
         return self.stub.Parse(req)
 
 class Stream(threading.Thread):
@@ -106,8 +119,8 @@ class Stream(threading.Thread):
                 print(e)
             generator_index += 1
             elapsed = time.time() - time_start
-            if elapsed < 1:
-                time.sleep(1 - elapsed)
+            if elapsed < cfg.interval:
+                time.sleep(cfg.interval - elapsed)
 
     def exit(self):
         self.gtfo = 1
@@ -126,35 +139,35 @@ class MessageGenerator(threading.Thread):
 
         client = ParserClient()
 
-        for index in range(1, cfg.mps + 1):
+        for index in range(1, cfg.rate + 1):
             client.getParseForMessage(self.name, self.stream_id, index, str(datetime.utcnow()), 'metadataXXX')
             index += 1
         elapsed = time.time() - self.started_at
-        if elapsed > 1:
-            print('ERROR: {} - Sending {} took {}, execute scale out!'.format(self.name, cfg.mps, elapsed))
+        if elapsed > cfg.interval:
+            print('ERROR: {} - Sending {} took {}, which is more than the interval {}, execute scale out!'.format(self.name, cfg.rate, elapsed, cfg.interval))
 
 def client():
     streams = list()
     for i in range(1, cfg.streams + 1):
-        cam = Stream(i)
-        streams.append(cam)
+        stream = Stream(i)
+        streams.append(stream)
 
     print('Starting {} streams'.format(len(streams)))
-    for cam in streams:
+    for stream in streams:
         try:
-            cam.start()
-            print('Stream {} started'.format(cam))
+            stream.start()
+            print('Stream {} started'.format(stream))
 
         except Exception as e:
             print('{}'.format(e))
 
     while len(streams) > 0:
-        for index, cam in enumerate(streams):
+        for index, stream in enumerate(streams):
             try:
-                cam.join(0.25)
+                stream.join(0.25)
             except KeyboardInterrupt:
-                for cam in streams:
-                    cam.exit()
+                for stream in streams:
+                    stream.exit()
                     streams.pop(index)
 #                sys.exit(1)
             except Exception as e:
@@ -164,6 +177,45 @@ def client():
 
 class NudnikConfiguration(dict):
     pass
+
+class FakeLoadCpu(threading.Thread):
+    def __init__(self, time_load):
+        threading.Thread.__init__(self)
+        self.time_load = int(time_load)
+
+    def run(self):
+        started_at = time.time()
+        while ((time.time() - started_at) < self.time_load):
+            pass
+
+
+class FakeLoadMem(threading.Thread):
+    def __init__(self, amount_in_mb):
+        threading.Thread.__init__(self)
+        self.amount_in_mb = int(amount_in_mb) * 1024 * 1024
+
+    def run(self):
+        urandom = os.urandom(self.amount_in_mb)
+
+def generate_load(load):
+    if load.load_type == 0:
+        time_sleep = float(load.value)
+        print('Sleeping for {}'.format(time_sleep))
+        time.sleep(time_sleep)
+    elif load.load_type == 1:
+        time_sleep = random.uniform(0.0, float(load.value))
+        print('Sleeping for random value {}'.format(time_sleep))
+        time.sleep(time_sleep)
+    elif load.load_type == 2:
+        time_load = load.value
+        print('CPU loading for {} seconds'.format(time_load))
+        for i in range(0, os.cpu_count()):
+            cpu_load_thread = FakeLoadCpu(time_load).start()
+    elif load.load_type == 3:
+        amount_in_mb = load.value
+        print('Loading {} MB to RAM'.format(amount_in_mb))
+        mem_load_thread = FakeLoadMem(amount_in_mb)
+        mem_load_thread.start()
 
 if __name__ == '__main__':
 
@@ -177,7 +229,11 @@ if __name__ == '__main__':
     parser.add_argument('--server', action='store_true', default=False, help='Operation mode (default: client)')
     parser.add_argument('--name', type=str, default='NAME', help='Parser name')
     parser.add_argument('--streams', type=int, default='1', help='Number of streams (Default: 1)')
-    parser.add_argument('--mps', type=int, default='10', help='Number of messages per second (Default: 10)')
+    parser.add_argument('--interval', type=int, default='1', help='Number of seconds per stream message cycle (Default: 1)')
+    parser.add_argument('--rate', type=int, default='10', help='Number of messages per interval (Default: 10)')
+    parser.add_argument('--load', nargs=2, action='append', type=str, metavar=('load_type', 'load_value'), dest='load',
+                        help='Add artificial load [rtt, rttr, cpu, mem] (Default: None)')
+
     args = parser.parse_args()
 
     cfg = NudnikConfiguration()
