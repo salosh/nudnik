@@ -84,12 +84,12 @@ Configure
 
 ## Via `Nudnik` Command line args:
 ```shell
-./nudnik.py -h
 python3 ./nudnik.py -h
 usage: nudnik.py [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
-                 [--server] [--name NAME] [--streams STREAMS]
+                 [--server] [--name NAME] [--meta META] [--streams STREAMS]
                  [--interval INTERVAL] [--rate RATE]
-                 [--load load_type load_value]
+                 [--load load_type load_value] [--retry-count RETRY_COUNT]
+                 [--fail-ratio FAIL_RATIO]
 
 Nudnik - gRPC load tester
 
@@ -101,6 +101,7 @@ optional arguments:
   --port PORT           port
   --server              Operation mode (default: client)
   --name NAME           Parser name
+  --meta META           Send this extra data with every request
   --streams STREAMS     Number of streams (Default: 1)
   --interval INTERVAL   Number of seconds per stream message cycle (Default:
                         1)
@@ -108,6 +109,11 @@ optional arguments:
   --load load_type load_value
                         Add artificial load [rtt, rttr, cpu, mem] (Default:
                         None)
+  --retry-count RETRY_COUNT
+                        Number of times to re-send failed messages (Default:
+                        -1)
+  --fail-ratio FAIL_RATIO
+                        Percent of requests to intentionally fail (Default: 0)
 
 2018 (C) Salo Shp <SaloShp@Gmail.Com> <https://github.com/salosh/nudnik.git>
 ```
@@ -120,6 +126,11 @@ nano ./config.yml
  * Run example Server:
 ```shell
 ./nudnik.py --server
+```
+
+ * Run example Server that fails `14%` of all incoming requests:
+```shell
+./nudnik.py --server --fail-ratio 14
 ```
 
  * Run a client that identifies itself as `foobar`, fork to `20` threads, each sending `5` gRPC messages every `3` seconds.

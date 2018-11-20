@@ -59,3 +59,15 @@
 #load:
 #- ["rttr", "0.0030"]
 #- ["cpu", "1"]
+
+#
+# Send this extra data with every request
+#meta: ""
+
+#
+# Number of times to re-send failed messages, negative value means infinite retries
+#retry_count: -1
+
+#
+# Percent of requests to fail intentionally
+#fail_ratio: 0

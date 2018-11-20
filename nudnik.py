@@ -38,7 +38,8 @@ class ParseService(entity_pb2_grpc.ParserServicer):
 
     def __init__(self):
         super(ParseService, self).__init__()
-        self.meta = 0
+        self.successful_requests = 0
+        self.failed_requests = 0
         self.started_at = datetime.utcnow()
         self.last_report = datetime.utcnow()
 
@@ -53,21 +54,35 @@ class ParseService(entity_pb2_grpc.ParserServicer):
             request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S')
         delta = (datetime.utcnow() - request_timestamp)
 
-        print('name-sid-idx={},mid={},ts={},delta={}'.format(request.name, request.message_id, request.timestamp, delta))
-#        print(request)
-        result = {'status_code': 'OK'}
+        total = self.failed_requests + self.successful_requests
+        try:
+            current_fail_ratio = float((self.failed_requests / total) * 100)
+        except ZeroDivisionError:
+            current_fail_ratio = 100
 
-        self.meta += 1
-        now = datetime.utcnow()
-        if (now - self.last_report).total_seconds() > 5:
-            print('**************************')
-            print('Handeled {}/sec messages'.format( self.meta / (datetime.utcnow() - self.started_at).total_seconds() ))
-            print('**************************')
-            self.last_report = now
+        if current_fail_ratio > cfg.fail_ratio:
+            self.successful_requests += 1
+            status_code = 'OK'
+        else:
+            print('failed={},success={},current_fail_ratio={},conf_fail_ratio={}'.format(self.failed_requests, self.successful_requests, current_fail_ratio, cfg.fail_ratio))
+            self.failed_requests += 1
+            status_code = 'SERVER_ERROR'
+
+        tostring = '{},name-sid-idx={},mid={},ts={},delta={}'.format(status_code, request.name, request.message_id, request.timestamp, delta)
+        print(tostring)
+#        print(request)
+        result = {'status_code': status_code}
+
+#        now = datetime.utcnow()
+#        if (now - self.last_report).total_seconds() > 5:
+#            print('**************************')
+#            print('Handeled {}/sec messages'.format( total / (datetime.utcnow() - self.started_at).total_seconds() ))
+#            print('**************************')
+#            self.last_report = now
         return entity_pb2.Response(**result)
 
     def start_server(self):
-        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=(os.cpu_count() - 1)))
         entity_pb2_grpc.add_ParserServicer_to_server(ParseService(),parse_server)
         parse_server.add_insecure_port('[::]:{}'.format(cfg.port))
         # Non blocking
@@ -91,14 +106,8 @@ class ParserClient(object):
         # bind the client to the server channel
         self.stub = entity_pb2_grpc.ParserStub(self.channel)
 
-    def getParseForMessage(self, name, stream_id, message_id, timestamp, meta):
-        load_list = list()
-        if cfg.load is not None:
-            for load in cfg.load:
-                load = entity_pb2.Load(load_type=load[0], value=load[1])
-                load_list.append(load)
-        req = entity_pb2.Request(name=name, stream_id=stream_id, message_id=message_id, timestamp=timestamp, meta=meta, load=load_list)
-        return self.stub.Parse(req)
+    def get_response_for_request(self, request):
+        return self.stub.Parse(request)
 
 class Stream(threading.Thread):
     def __init__(self, stream_id):
@@ -138,10 +147,27 @@ class MessageGenerator(threading.Thread):
     def run(self):
 
         client = ParserClient()
+        load_list = list()
+        if cfg.load is not None:
+            for load in cfg.load:
+                load = entity_pb2.Load(load_type=load[0], value=load[1])
+                load_list.append(load)
 
         for index in range(1, cfg.rate + 1):
-            client.getParseForMessage(self.name, self.stream_id, index, str(datetime.utcnow()), 'metadataXXX')
-            index += 1
+            request = entity_pb2.Request(name=self.name,
+                                     stream_id=self.stream_id,
+                                     message_id=index,
+                                     timestamp=str(datetime.utcnow()),
+                                     meta=cfg.meta,
+                                     load=load_list)
+
+            try_count = 1 + cfg.retry_count
+            send_was_successful = False
+            while (not send_was_successful and ((cfg.retry_count < 0) or (try_count > 0))):
+                response = client.get_response_for_request(request)
+                send_was_successful = (response.status_code == 0)
+                try_count -= 1
+
         elapsed = time.time() - self.started_at
         if elapsed > cfg.interval:
             print('ERROR: {} - Sending {} took {}, which is more than the interval {}, execute scale out!'.format(self.name, cfg.rate, elapsed, cfg.interval))
@@ -228,11 +254,14 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default='5410', help='port')
     parser.add_argument('--server', action='store_true', default=False, help='Operation mode (default: client)')
     parser.add_argument('--name', type=str, default='NAME', help='Parser name')
+    parser.add_argument('--meta', type=str, default='', help='Send this extra data with every request')
     parser.add_argument('--streams', type=int, default='1', help='Number of streams (Default: 1)')
     parser.add_argument('--interval', type=int, default='1', help='Number of seconds per stream message cycle (Default: 1)')
     parser.add_argument('--rate', type=int, default='10', help='Number of messages per interval (Default: 10)')
     parser.add_argument('--load', nargs=2, action='append', type=str, metavar=('load_type', 'load_value'), dest='load',
                         help='Add artificial load [rtt, rttr, cpu, mem] (Default: None)')
+    parser.add_argument('--retry-count', type=int, default='-1', help='Number of times to re-send failed messages (Default: -1)')
+    parser.add_argument('--fail-ratio', type=int, default='0', help='Percent of requests to intentionally fail (Default: 0)')
 
     args = parser.parse_args()
 
