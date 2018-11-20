@@ -181,7 +181,7 @@ class NudnikConfiguration(dict):
 class FakeLoadCpu(threading.Thread):
     def __init__(self, time_load):
         threading.Thread.__init__(self)
-        self.time_load = int(time_load)
+        self.time_load = float(time_load)
 
     def run(self):
         started_at = time.time()

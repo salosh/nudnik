@@ -18,21 +18,44 @@
 
 #
 # Specify if should run in server mode
+#
 #server: False
 
 #
 # The host:port you wish to use for connection, depends on the operation mode
+#
 #host: "127.0.0.1"
 #port: 5410
 
 #
 # The name the client should report when composing messages
+#
 #name: "NAME"
 
 #
 # Number of streams that should be created
+#
 #streams: 1
 
 #
-# The number of messages-per-second each strweam should produce
-#mps: 10
+# The number of seconds per stream message cycle
+#
+#interval: 1
+
+#
+# The rate of messages-per-second each stream should produce
+#
+#rate: 10
+
+#
+# Add fake load to every request
+# You may specify as much as you like, and several of the same type, however they will be executed FIFO
+# Possible values:
+#   "rtt"  - Add a fixed <value> seconds sleeping time before replying (string value, will be cast to float)
+#   "rttr" - Add a random (between 0 and <value>) seconds sleeping time before replying (specify value, will be cast to float)
+#   "cpu"  - Add a CPU load for <value> amount of seconds (specify string, will be cast to float)
+#   "mem"  - Add a MEM load for <value> amount of MB to be loaded to memory (specify string, will be cast to int)
+#
+#load:
+#- ["rttr", "0.0030"]
+#- ["cpu", "1"]
