@@ -12,4 +12,4 @@ services:
   nudnik-client:
     build: .
     image: salosh/nudnik:latest
-    command: python ./nudnik.py --streams 20 --mps 5 --name foobar --host nudnik-server --port 5410
+    command: python ./nudnik.py --streams 20 --interval 3 --rate 5 --name foobar --host nudnik-server --port 5410

@@ -14,5 +14,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 5410
 
 COPY . .
+RUN python -m grpc_tools.protoc --proto_path=. ./entity.proto --python_out=. --grpc_python_out=.
 
 CMD [ "python", "./nudnik.py", "--server" ]
