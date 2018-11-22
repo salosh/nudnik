@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 #    This file is part of Nudnik. <https://github.com/salosh/nudnik.git>
 #
@@ -31,6 +31,7 @@ from concurrent import futures
 import grpc
 import entity_pb2
 import entity_pb2_grpc
+import requests_unixsocket
 
 _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 
@@ -42,17 +43,28 @@ class ParseService(entity_pb2_grpc.ParserServicer):
         self.failed_requests = 0
         self.started_at = datetime.utcnow()
         self.last_report = datetime.utcnow()
+        self.session = requests_unixsocket.Session()
 
     def Parse(self, request, context):
 
-        for load in request.load:
+        for load in cfg.load_list:
             generate_load(load)
 
         try:
-            request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S.%f')
+            request_ctime = datetime.strptime(request.ctime, '%Y-%m-%d %H:%M:%S.%f')
         except Exception:
-            request_timestamp = datetime.strptime(request.timestamp, '%Y-%m-%d %H:%M:%S')
-        delta = (datetime.utcnow() - request_timestamp)
+            request_ctime = datetime.strptime(request.ctime, '%Y-%m-%d %H:%M:%S')
+        cdelta = (datetime.utcnow() - request_ctime).total_seconds()
+
+        if request.rtime != '':
+            try:
+                request_rtime = datetime.strptime(request.rtime, '%Y-%m-%d %H:%M:%S.%f')
+            except Exception:
+                request_rtime = datetime.strptime(request.rtime, '%Y-%m-%d %H:%M:%S')
+            rdelta = (datetime.utcnow() - request_ctime).total_seconds()
+        else:
+            request_rtime = None
+            rdelta = 0
 
         total = self.failed_requests + self.successful_requests
         try:
@@ -60,7 +72,7 @@ class ParseService(entity_pb2_grpc.ParserServicer):
         except ZeroDivisionError:
             current_fail_ratio = 100
 
-        if current_fail_ratio > cfg.fail_ratio:
+        if current_fail_ratio >= cfg.fail_ratio:
             self.successful_requests += 1
             status_code = 'OK'
         else:
@@ -68,21 +80,26 @@ class ParseService(entity_pb2_grpc.ParserServicer):
             self.failed_requests += 1
             status_code = 'SERVER_ERROR'
 
-        tostring = '{},name-sid-idx={},mid={},ts={},delta={}'.format(status_code, request.name, request.message_id, request.timestamp, delta)
+        tostring = '{},name-sid-seq={},mid={},ctime={},rtime={},cdelta={},rdelta={}'.format(status_code, request.name, request.message_id, request.ctime, request.rtime, cdelta, rdelta)
         print(tostring)
-#        print(request)
         result = {'status_code': status_code}
+        if request_rtime is not None:
+            data='request,status={},name={} mid={},ctime={},rtime={},cdelta={},rdelta={} {}'.format(status_code, request.name, request.message_id, request_ctime.strftime('%s'), request_rtime.strftime('%s'), cdelta, rdelta, datetime.utcnow().strftime('%s'))
+        else:
+            data='request,status={},name={} mid={},ctime={},cdelta={} {}'.format(status_code, request.name, request.message_id, request_ctime.strftime('%s'), cdelta, datetime.utcnow().strftime('%s'))
 
-#        now = datetime.utcnow()
-#        if (now - self.last_report).total_seconds() > 5:
-#            print('**************************')
-#            print('Handeled {}/sec messages'.format( total / (datetime.utcnow() - self.started_at).total_seconds() ))
-#            print('**************************')
-#            self.last_report = now
+        r = self.session.post('http+unix://%2Fvar%2Frun%2Finfluxdb%2Finfluxdb.sock/write?db=metrics&precision=s', data=data)
+#        print('Response: "{}"'.format(r.text))
+
+#        stat = {'name': request.name, 'message_id': request.message_id, 'ctime': request.ctime, 'rtime': request.rtime, 'cdelta': cdelta, 'rdelta': rdelta}
+#        self.stats.append(stat)
+#        if len(self.stats) > 10000:
+#            self.stats = self.stats[1000:]
+
         return entity_pb2.Response(**result)
 
     def start_server(self):
-        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=(os.cpu_count() - 1)))
+        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max(1, (os.cpu_count() - 1))))
         entity_pb2_grpc.add_ParserServicer_to_server(ParseService(),parse_server)
         parse_server.add_insecure_port('[::]:{}'.format(cfg.port))
         # Non blocking
@@ -101,7 +118,11 @@ class ParserClient(object):
     def __init__(self):
         self.host = cfg.host
         self.port = cfg.port
-        self.channel = grpc.insecure_channel('{}:{}'.format(self.host, self.port))
+# TODO gRPC does not honor values bigger than 4194304
+#        max_message_size = (100 * 1024 * 1024)
+#        options=[('grpc.max_message_length', -1), ('grpc.max_recieve_message_length', -1), ('grpc.max_send_message_length', -1)]
+        options=[]
+        self.channel = grpc.insecure_channel('{}:{}'.format(self.host, self.port), options=options)
 
         # bind the client to the server channel
         self.stub = entity_pb2_grpc.ParserStub(self.channel)
@@ -118,15 +139,15 @@ class Stream(threading.Thread):
         self.name = '{}-{}'.format(cfg.name, stream_id)
 
     def run(self):
-        generator_index = 0
+        generator_sequence_number = 0
         while not self.gtfo:
             time_start = time.time()
             try:
-                fg = MessageGenerator(self.stream_id, generator_index)
+                fg = MessageGenerator(self.stream_id, generator_sequence_number)
                 fg.start()
             except Exception as e:
                 print(e)
-            generator_index += 1
+            generator_sequence_number += 1
             elapsed = time.time() - time_start
             if elapsed < cfg.interval:
                 time.sleep(cfg.interval - elapsed)
@@ -136,30 +157,32 @@ class Stream(threading.Thread):
 
 class MessageGenerator(threading.Thread):
 
-    def __init__(self, stream_id, generator_index):
+    def __init__(self, stream_id, generator_sequence_number):
         threading.Thread.__init__(self)
 
         self.stream_id = stream_id
-        self.generator_index = generator_index
+        self.generator_sequence_number = generator_sequence_number
         self.started_at = time.time()
-        self.name = '{}-{}-{}'.format(cfg.name, stream_id, generator_index)
+        self.name = '{}-{}'.format(cfg.name, stream_id)
 
     def run(self):
 
         client = ParserClient()
-        load_list = list()
-        if cfg.load is not None:
-            for load in cfg.load:
-                load = entity_pb2.Load(load_type=load[0], value=load[1])
-                load_list.append(load)
 
         for index in range(1, cfg.rate + 1):
+            if 'meta_filepath' in cfg and cfg.meta_filepath is not None and cfg.meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
+                cfg.meta = os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
+
             request = entity_pb2.Request(name=self.name,
                                      stream_id=self.stream_id,
+                                     sequence_id=self.generator_sequence_number,
                                      message_id=index,
-                                     timestamp=str(datetime.utcnow()),
+                                     ctime=str(datetime.utcnow()),
                                      meta=cfg.meta,
-                                     load=load_list)
+                                     load=cfg.load_list)
+
+            for load in request.load:
+                generate_load(load)
 
             try_count = 1 + cfg.retry_count
             send_was_successful = False
@@ -167,6 +190,8 @@ class MessageGenerator(threading.Thread):
                 response = client.get_response_for_request(request)
                 send_was_successful = (response.status_code == 0)
                 try_count -= 1
+                if not send_was_successful:
+                    request.rtime=str(datetime.utcnow())
 
         elapsed = time.time() - self.started_at
         if elapsed > cfg.interval:
@@ -254,7 +279,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default='5410', help='port')
     parser.add_argument('--server', action='store_true', default=False, help='Operation mode (default: client)')
     parser.add_argument('--name', type=str, default='NAME', help='Parser name')
-    parser.add_argument('--meta', type=str, default='', help='Send this extra data with every request')
+    parser.add_argument('--meta', type=str, default=None, help='Send this extra data with every request')
     parser.add_argument('--streams', type=int, default='1', help='Number of streams (Default: 1)')
     parser.add_argument('--interval', type=int, default='1', help='Number of seconds per stream message cycle (Default: 1)')
     parser.add_argument('--rate', type=int, default='10', help='Number of messages per interval (Default: 10)')
@@ -287,10 +312,40 @@ if __name__ == '__main__':
         pass
 
     for key in args.__dict__:
-        # TODO fix overriding precedence
-        if getattr(cfg, key, None): continue
-        value = args.__dict__[key]
-        setattr(cfg, key, value)
+        try:
+            value = os.environ['NUDNIK_' + key.upper()]
+
+            if isinstance(vars(args)[key], int):
+                value = int(value)
+            else:
+                value = str(value)
+        except KeyError:
+            # TODO fix overriding precedence
+            if getattr(cfg, key, None): continue
+            value = args.__dict__[key]
+        finally:
+            setattr(cfg, key, value)
+
+
+    _MAX_MESSAGE_SIZE_GRPC_BUG = 4194304 - 48
+    if cfg.meta is not None and cfg.meta != '' and cfg.meta[0] == '@':
+        cfg.meta_filepath = cfg.meta[1:]
+
+        try:
+            with open(cfg.meta_filepath, 'rb') as f:
+                cfg.meta = f.read(_MAX_MESSAGE_SIZE_GRPC_BUG)
+
+        except Exception as e:
+            print('Could not open meta file "{}", {}'.format(cfg.meta_filepath, str(e)))
+            cfg.meta = None
+            pass
+
+    load_list = list()
+    if cfg.load is not None:
+        for load in cfg.load:
+            load = entity_pb2.Load(load_type=load[0], value=load[1])
+            load_list.append(load)
+    cfg.load_list = load_list
 
     if cfg.server:
         server = ParseService()

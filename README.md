@@ -66,7 +66,7 @@ Requirement are Python 3.7 + requirements.txt file
  * Clone and initialize Nudnik:
 ```sh
 # Install python requirements
-pip install grpcio grpcio-tools
+pip install grpcio grpcio-tools requests-unixsocket
 
 # Clone and configure the repository
 git clone https://github.com/salosh/nudnik.git
@@ -74,7 +74,7 @@ git config --global push.default matching
 git config --global user.name "Your Name"
 git config --global user.email your.email@salosh.org
 
-# Clone and configure the repository            
+# "Compile" the entity protobuf
 cd nudnik
 python -m grpc_tools.protoc --proto_path=. ./entity.proto --python_out=. --grpc_python_out=.
 ```
