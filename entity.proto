@@ -37,10 +37,12 @@ message Load {
 message Request {
   string name        = 1;
   int32  stream_id   = 2;
-  int32  message_id  = 3;
-  string timestamp   = 4;
-  string meta        = 5;
-  repeated Load load = 6;
+  int32  sequence_id = 3;
+  int32  message_id  = 4;
+  string ctime       = 5;
+  string rtime       = 6;
+  bytes  meta        = 7;
+  repeated Load load = 8;
 }
 
 message Response {
