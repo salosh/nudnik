@@ -146,7 +146,7 @@ optional arguments:
                         Metrics database name (Default: nudnikmetrics)
   --debug               Debug mode (default: False)
 
-2018 (C) Salo Shp <SaloShp@Gmail.Com> <https://github.com/salosh/nudnik.git>
+2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>
 ```
 
 ## Via config file:

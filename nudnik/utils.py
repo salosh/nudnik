@@ -31,7 +31,7 @@ class NudnikConfiguration(dict):
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Nudnik - gRPC load tester',
-        epilog='2018 (C) Salo Shp <SaloShp@Gmail.Com> <https://github.com/salosh/nudnik.git>'
+        epilog='2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'
     )
     parser.add_argument('--config-file',
                         type=str,
@@ -85,6 +85,9 @@ def parse_args():
     parser.add_argument('--debug',
                         action='store_true',
                         help='Debug mode (default: False)')
+    parser.add_argument('--verbose',
+                        action='store_true',
+                        help='Verbose mode (default: False)')
 
     args = parser.parse_args()
     return args
