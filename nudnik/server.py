@@ -18,6 +18,7 @@ import os
 import requests_unixsocket
 from concurrent import futures
 import time
+import threading
 
 import grpc
 
@@ -28,15 +29,13 @@ _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 
 class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, metrics):
         super(ParseService, self).__init__()
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.successful_requests = 0
         self.failed_requests = 0
-        self.session = requests_unixsocket.Session()
-        self.metrics_url = 'http+unix://{}/write?db={}&precision=ns'.format(self.cfg.metrics_socket_path.replace('/', '%2F'), self.cfg.metrics_db_name)
-        self.metrics = list()
+        self.metrics = metrics
 
     def parse(self, request, context):
 
@@ -82,18 +81,13 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
         self.metrics.append(data)
 
-        if len(self.metrics) >= 1140:
-            r = self.session.post(self.metrics_url, data='\n'.join(self.metrics))
-            self.metrics = list()
-            self.log.debug('Response: "{}"'.format(r.text))
-
         return nudnik.entity_pb2.Response(**result)
 
     def start_server(self):
         max_workers = max(1, (os.cpu_count() - 1))
 #        max_workers = os.cpu_count() * 2
         parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
-        nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg),parse_server)
+        nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.metrics),parse_server)
         parse_server.add_insecure_port('[::]:{}'.format(self.cfg.port))
         # Non blocking
         parse_server.start()
@@ -106,4 +100,38 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             parse_server.stop(0)
             self.log.warn('Interrupted by user')
 
+
+class Metrics(threading.Thread):
+    def __init__(self, cfg, metrics):
+        threading.Thread.__init__(self)
+        self.gtfo = False
+
+        self.cfg = cfg
+        self.log = utils.get_logger(cfg.debug)
+        self.session = requests_unixsocket.Session()
+        self.metrics_url = 'http+unix://{}/write?db={}&precision=ns'.format(self.cfg.metrics_socket_path.replace('/', '%2F'), self.cfg.metrics_db_name)
+        self.metrics = metrics
+        self.name = '{}-metrics'.format(cfg.name)
+        self.log.debug('Metrics {} initiated'.format(self.name))
+
+    def run(self):
+        report_count = (self.cfg.streams * self.cfg.interval * self.cfg.rate) - 1
+        while not self.gtfo:
+            time_start = time.time_ns()
+
+            if len(self.metrics) > report_count:
+                r = self.session.post(self.metrics_url, data='\n'.join(self.metrics[:report_count]))
+                if r.status_code == 204:
+                    for i in range(0, report_count):
+                        self.metrics.pop(0)
+                else:
+                    self.log.error('Response: "{}"'.format(r.text))
+
+            elapsed = utils.diff_seconds(time_start, time.time_ns())
+            if elapsed < self.cfg.interval:
+                time.sleep(self.cfg.interval - elapsed)
+
+
+    def exit(self):
+        self.gtfo = 1
 

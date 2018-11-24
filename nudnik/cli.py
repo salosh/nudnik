@@ -27,7 +27,10 @@ def main():
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.server.ParseService(cfg)
+        metrics = list()
+        metricsthread = nudnik.server.Metrics(cfg, metrics)
+        metricsthread.start()
+        server = nudnik.server.ParseService(cfg, metrics)
         server.start_server()
     else:
         log.debug('Running Nudnik in client mode')

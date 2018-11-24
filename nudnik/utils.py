@@ -19,8 +19,11 @@ import argparse
 import yaml
 import os
 import time
+from datetime import datetime
 
 import nudnik
+
+_BILLION = 10**9
 
 class NudnikConfiguration(dict):
     pass
@@ -30,23 +33,58 @@ def parse_args():
         description='Nudnik - gRPC load tester',
         epilog='2018 (C) Salo Shp <SaloShp@Gmail.Com> <https://github.com/salosh/nudnik.git>'
     )
-    parser.add_argument('--config-file',         type=str,            help='Path to YAML config file')
-    parser.add_argument('--host',                type=str,            help='host')
-    parser.add_argument('--port',                type=int,            help='port')
-    parser.add_argument('--server',              action='store_true', help='Operation mode (default: client)')
-    parser.add_argument('--name',                type=str, help='Parser name')
-    parser.add_argument('--name-mismatch-error', action='store_true', help='Fail request on name mismatch (default: False)')
-    parser.add_argument('--meta',                type=str, help='Send this extra data with every request')
-    parser.add_argument('--streams',             type=int, help='Number of streams (Default: 1)')
-    parser.add_argument('--interval',            type=int, help='Number of seconds per stream message cycle (Default: 1)')
-    parser.add_argument('--rate',                type=int, help='Number of messages per interval (Default: 10)')
-    parser.add_argument('--load', nargs=2, action='append', type=str, metavar=('load_type', 'load_value'), dest='load',
+    parser.add_argument('--config-file',
+                        type=str,
+                        help='Path to YAML config file')
+    parser.add_argument('--host',
+                        type=str,
+                        help='host')
+    parser.add_argument('--port',
+                        type=int,
+                        help='port')
+    parser.add_argument('--server',
+                        action='store_true',
+                        help='Operation mode (default: client)')
+    parser.add_argument('--name',
+                        type=str,
+                        help='Parser name')
+    parser.add_argument('--name-mismatch-error',
+                        action='store_true',
+                        help='Fail request on name mismatch (default: False)')
+    parser.add_argument('--meta',
+                        type=str,
+                        help='Send this extra data with every request')
+    parser.add_argument('--streams',
+                        type=int,
+                        help='Number of streams (Default: 1)')
+    parser.add_argument('--interval',
+                        type=int,
+                        help='Number of seconds per stream message cycle (Default: 1)')
+    parser.add_argument('--rate',
+                        type=int,
+                        help='Number of messages per interval (Default: 10)')
+    parser.add_argument('--load',
+                        type=str,
+                        nargs=2,
+                        action='append',
+                        metavar=('load_type', 'load_value'),
+                        dest='load',
                         help='Add artificial load [rtt, rttr, cpu, mem] (Default: None)')
-    parser.add_argument('--retry-count',         type=int, help='Number of times to re-send failed messages (Default: -1)')
-    parser.add_argument('--fail-ratio',          type=int, help='Percent of requests to intentionally fail (Default: 0)')
-    parser.add_argument('--metrics-socket-path', type=str, help='Full path to metrics Unix socket (Default: /var/run/influxdb/influxdb.sock)')
-    parser.add_argument('--metrics-db-name',     type=str, help='Metrics database name (Default: nudnikmetrics)')
-    parser.add_argument('--debug',               action='store_true', help='Debug mode (default: False)')
+    parser.add_argument('--retry-count',
+                        type=int,
+                        help='Number of times to re-send failed messages (Default: -1, which means infinite times)')
+    parser.add_argument('--fail-ratio',
+                        type=int,
+                        help='Percent of requests to intentionally fail (Default: 0)')
+    parser.add_argument('--metrics-socket-path',
+                        type=str,
+                        help='Full path to metrics Unix socket (Default: /var/run/influxdb/influxdb.sock)')
+    parser.add_argument('--metrics-db-name',
+                        type=str,
+                        help='Metrics database name (Default: nudnikmetrics)')
+    parser.add_argument('--debug',
+                        action='store_true',
+                        help='Debug mode (default: False)')
 
     args = parser.parse_args()
     return args
@@ -75,7 +113,7 @@ def parse_config(args):
     }
 
     for key in DEFAULTS:
-        env_key_name = 'NUDNIK_' + key.upper()
+        env_key_name = 'NUDNIK_{key_name}'.format(key_name=key.upper())
         if key in args.__dict__ and vars(args)[key]:
             value = vars(args)[key]
         elif env_key_name in os.environ:
@@ -172,5 +210,7 @@ def diff_nanoseconds(before, after):
     return (after - before)
 
 def diff_seconds(before, after):
-    return ((after - before) / (10**9))
+    return ((after - before) / _BILLION)
 
+def time_to_date(timestamp):
+    return datetime.fromtimestamp( timestamp / _BILLION )

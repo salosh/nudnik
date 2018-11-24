@@ -127,7 +127,7 @@ reporting-disabled = true
   # The maximum number of tag values per tag that are allowed before writes are dropped.  This limit
   # can prevent high cardinality tag values from being written to a measurement.  This limit can be
   # disabled by setting it to 0.
-  # max-values-per-tag = 100000
+  max-values-per-tag = 0
 
   # If true, then the mmap advise value MADV_WILLNEED will be provided to the kernel with respect to
   # TSM files. This setting has been found to be problematic on some kernels, and defaults to off.
