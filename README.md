@@ -24,12 +24,12 @@ pip install nudnik
 
  * Run example Server:
 ```shell
-./nudnik.py --server
+nudnik --server
 ```
 
  * Run a client that identifies itself as `barbaz`, fork to `2` threads, each sending `5` gRPC messages every `3` seconds.
 ```shell
-./nudnik.py --name barbaz --streams 2 --interval 3 --rate 5
+nudnik --name barbaz --streams 2 --interval 3 --rate 5
 ```
 
 Docker - Quick Start
@@ -156,27 +156,27 @@ nano ./config.yml
 
  * Run example Server that fails `14%` of all incoming requests:
 ```shell
-./nudnik.py --server --fail-ratio 14
+nudnik --server --fail-ratio 14
 ```
 
  * Run a client that identifies itself as `foobar`, fork to `20` threads, each sending `5` gRPC messages every `3` seconds.
 ```shell
-./nudnik.py --name foobar --streams 20 --interval 3 --rate 5
+nudnik --name foobar --streams 20 --interval 3 --rate 5
 ```
 
  * Run a client that identifies itself as `FakeFixedLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for `0.01` seconds before replying.
 ```shell
-./nudnik.py --name FakeFixedLatency --streams 3 --interval 10 --rate 1 --load rtt 0.01
+nudnik --name FakeFixedLatency --streams 3 --interval 10 --rate 1 --load rtt 0.01
 ```
 
  * Run a client that identifies itself as `FakeRandomLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying.
 ```shell
-./nudnik.py --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5
+nudnik --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5
 ```
 
  * Run a client that identifies itself as `FakeLatencyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying.
 ```shell
-./nudnik.py --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5
+nudnik --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5
 ```
 
 * * *
