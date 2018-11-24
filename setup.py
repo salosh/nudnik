@@ -34,7 +34,6 @@ setuptools.setup(
      install_requires=['grpcio', 'grpcio-tools', 'requests-unixsocket'],
      python_requires='~=3.3',
      classifiers=[
-         "Development Status :: 2",
          "Environment :: Console",
          "Intended Audience :: System Administrators",
          "Programming Language :: Python :: 3.7",
