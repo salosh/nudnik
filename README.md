@@ -13,6 +13,25 @@ Features
  - Fake IO load from either client or server side
  -
 
+Quick Start
+--------------------
+
+ * Install Nudnik:
+```sh
+# Install package
+pip install nudnik
+```
+
+ * Run example Server:
+```shell
+./nudnik.py --server
+```
+
+ * Run a client that identifies itself as `barbaz`, fork to `2` threads, each sending `5` gRPC messages every `3` seconds.
+```shell
+./nudnik.py --name barbaz --streams 2 --interval 3 --rate 5
+```
+
 Docker - Quick Start
 --------------------
 
@@ -48,8 +67,10 @@ Every message consists of several fields:
  - name: The name of the client, arbitrary string
  - stream_id: The stream id, the streams are numbered from `0` to whatever was configureed via the `streams` arg.
  - message_id: At every `interval`, the client sends `rate` messages, this id is an autoincrement index for that message.
- - timestamp: The timestamp at which the request was created
- - meta: Just another string field that does nothing, you may send additional arbitrary data to increase message size
+ - ctime: The timestamp at which the request was created
+ - rtime: The timestamp at which the request was retransmitted (0 if not applicapble)
+ - rcount: The amount of times this message was retransmitted (0 if not applicapble)
+ - meta: Just another string field that does nothing, you may send additional arbitrary data to increase message size or specify `random` to generate random data with every request
  - load: This field may be repeated several times, it instructs the server to create fake load of some sort before replying.
  
  Upon recieveing a message, the server will:
@@ -84,12 +105,14 @@ Configure
 
 ## Via `Nudnik` Command line args:
 ```shell
-python3 ./nudnik.py -h
-usage: nudnik.py [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
-                 [--server] [--name NAME] [--meta META] [--streams STREAMS]
-                 [--interval INTERVAL] [--rate RATE]
-                 [--load load_type load_value] [--retry-count RETRY_COUNT]
-                 [--fail-ratio FAIL_RATIO]
+nudnik -h
+usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
+              [--server] [--name NAME] [--name-mismatch-error] [--meta META]
+              [--streams STREAMS] [--interval INTERVAL] [--rate RATE]
+              [--load load_type load_value] [--retry-count RETRY_COUNT]
+              [--fail-ratio FAIL_RATIO]
+              [--metrics-socket-path METRICS_SOCKET_PATH]
+              [--metrics-db-name METRICS_DB_NAME] [--debug]
 
 Nudnik - gRPC load tester
 
@@ -101,6 +124,8 @@ optional arguments:
   --port PORT           port
   --server              Operation mode (default: client)
   --name NAME           Parser name
+  --name-mismatch-error
+                        Fail request on name mismatch (default: False)
   --meta META           Send this extra data with every request
   --streams STREAMS     Number of streams (Default: 1)
   --interval INTERVAL   Number of seconds per stream message cycle (Default:
@@ -114,6 +139,12 @@ optional arguments:
                         -1)
   --fail-ratio FAIL_RATIO
                         Percent of requests to intentionally fail (Default: 0)
+  --metrics-socket-path METRICS_SOCKET_PATH
+                        Full path to metrics Unix socket (Default:
+                        /var/run/influxdb/influxdb.sock)
+  --metrics-db-name METRICS_DB_NAME
+                        Metrics database name (Default: nudnikmetrics)
+  --debug               Debug mode (default: False)
 
 2018 (C) Salo Shp <SaloShp@Gmail.Com> <https://github.com/salosh/nudnik.git>
 ```
@@ -121,11 +152,6 @@ optional arguments:
 ## Via config file:
 ```shell  
 nano ./config.yml     
-```
-
- * Run example Server:
-```shell
-./nudnik.py --server
 ```
 
  * Run example Server that fails `14%` of all incoming requests:
@@ -138,23 +164,20 @@ nano ./config.yml
 ./nudnik.py --name foobar --streams 20 --interval 3 --rate 5
 ```
 
-
- * Run a client that identifies itself as `FakeFixedLatnecy`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for `0.01` seconds before replying.
+ * Run a client that identifies itself as `FakeFixedLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for `0.01` seconds before replying.
 ```shell
-./nudnik.py --name FakeFixedLatnecy --streams 3 --interval 10 --rate 1 --load rtt 0.01
+./nudnik.py --name FakeFixedLatency --streams 3 --interval 10 --rate 1 --load rtt 0.01
 ```
 
- * Run a client that identifies itself as `FakeRandomLatnecy`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying.
+ * Run a client that identifies itself as `FakeRandomLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying.
 ```shell
-./nudnik.py --name FakeRandomLatnecy --streams 3 --interval 10 --rate 1 --load rttr 0.5
+./nudnik.py --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5
 ```
 
-
- * Run a client that identifies itself as `FakeLatnecyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying.
+ * Run a client that identifies itself as `FakeLatencyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying.
 ```shell
-./nudnik.py --name FakeLatnecyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5
+./nudnik.py --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5
 ```
-
 
 * * *
 Visit our website at https://salosh.org
