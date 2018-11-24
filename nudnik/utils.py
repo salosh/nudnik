@@ -18,6 +18,7 @@ import logging
 import argparse
 import yaml
 import os
+import sys
 import time
 from datetime import datetime
 
@@ -88,6 +89,9 @@ def parse_args():
     parser.add_argument('--verbose',
                         action='store_true',
                         help='Verbose mode (default: False)')
+    parser.add_argument('--version',
+                        action='store_true',
+                        help='Display Nudnik version (default: False)')
 
     args = parser.parse_args()
     return args
@@ -112,7 +116,8 @@ def parse_config(args):
       'metrics_socket_path': '/var/run/influxdb/influxdb.sock',
       'metrics_db_name': 'nudnikmetrics',
       'debug': False,
-      'verbose': False
+      'verbose': False,
+      'version': False
     }
 
     for key in DEFAULTS:
@@ -131,6 +136,10 @@ def parse_config(args):
             value = DEFAULTS[key]
 
         setattr(cfg, key, value)
+
+    if cfg.version:
+        print('Nudnik v{version}'.format(version=nudnik.__version__))
+        sys.exit(0)
 
     try:
         with open(cfg.config_file, 'r') as ymlfile:
