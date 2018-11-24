@@ -17,10 +17,10 @@
 
 syntax = "proto3";
 
-package entity;
+package nudnik.entity;
 
 service Parser{
-  rpc Parse(Request) returns (Response) {}
+  rpc parse(Request) returns (Response) {}
 }
 
 message Load {
@@ -39,10 +39,11 @@ message Request {
   int32  stream_id   = 2;
   int32  sequence_id = 3;
   int32  message_id  = 4;
-  string ctime       = 5;
-  string rtime       = 6;
-  bytes  meta        = 7;
-  repeated Load load = 8;
+  int64  ctime       = 5;
+  int64  rtime       = 6;
+  int32  rcount      = 7;
+  bytes  meta        = 8;
+  repeated Load load = 9;
 }
 
 message Response {

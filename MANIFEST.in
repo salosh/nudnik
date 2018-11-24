@@ -1,0 +1,9 @@
+# Include readme
+include *.md
+
+# Include license file
+include LICENSE
+
+# Include protobufs
+#recursive-include proto/*
+include entity_pb2*
