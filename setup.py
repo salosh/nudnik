@@ -21,7 +21,7 @@ with open("README.md", "r") as f:
 
 setuptools.setup(
      name='nudnik',
-     version='0.0.3',
+     version='0.0.4',
      url="https://github.com/salosh/nudnik.git",
      scripts=['nudnik/bin/nudnik'],
      author="Salo Shp",
