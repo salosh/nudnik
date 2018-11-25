@@ -14,14 +14,20 @@
 #    You should have received a copy of the GNU General Public License
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
+import os
+from setuptools import setup
+
 import setuptools
 
 with open("README.md", "r") as f:
     long_description = f.read()
 
+with open('requirements.txt') as f:
+     install_reqs = f.read().splitlines()
+
 setuptools.setup(
      name='nudnik',
-     version='0.0.5',
+     version='0.0.6',
      url="https://github.com/salosh/nudnik.git",
      scripts=['nudnik/bin/nudnik'],
      author="Salo Shp",
@@ -31,12 +37,7 @@ setuptools.setup(
      long_description=long_description,
      long_description_content_type="text/markdown",
      packages=setuptools.find_packages(),
-     install_requires=[
-         'grpcio>=1.16.1',
-         'grpcio-tools>=1.16.1',
-         'requests-unixsocket>=0.1.5',
-         'PyYaml>=3.13'
-     ],
+     install_requires=install_reqs,
      python_requires='~=3.3',
      classifiers=[
          "Environment :: Console",
