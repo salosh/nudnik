@@ -27,7 +27,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
      name='nudnik',
-     version='0.0.6',
+     version='0.0.7',
      url="https://github.com/salosh/nudnik.git",
      scripts=['nudnik/bin/nudnik'],
      author="Salo Shp",

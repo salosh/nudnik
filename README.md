@@ -11,7 +11,8 @@ Features
 
  - Rate limiting
  - Fake IO load from either client or server side
- -
+ - Export timing metrics to a file or InfluxDB with any custom formatting
+ - 
 
 Quick Start
 --------------------
@@ -37,28 +38,6 @@ Docker - Quick Start
 
 * Running on your local/remote docker daemon using docker-compose:
   `docker-compose up`
-  should yield an example scenario with output similar to the following:
-
-  ```sh
-  name-sid-idx=foobar-2-6,mid=1,ts=2018-11-20 00:52:11.557882,delta=0:00:00.008537
-  name-sid-idx=foobar-3-6,mid=1,ts=2018-11-20 00:52:11.559378,delta=0:00:00.007551
-  name-sid-idx=foobar-1-6,mid=2,ts=2018-11-20 00:52:11.564696,delta=0:00:00.002975
-  name-sid-idx=foobar-1-6,mid=3,ts=2018-11-20 00:52:11.568250,delta=0:00:00.001183
-  name-sid-idx=foobar-2-6,mid=2,ts=2018-11-20 00:52:11.568753,delta=0:00:00.002804
-  name-sid-idx=foobar-3-6,mid=2,ts=2018-11-20 00:52:11.569651,delta=0:00:00.002318
-  ```
-
-  The log format consists of the following structure (might change ...):
-  ```sh
-  name-sid-idx=foobar-2-6,mid=1,ts=2018-11-20 00:52:11.557882,delta=0:00:00.008537
-  ```
-  * `name-sid-idx=foobar` - The clients name flag (e.g. foobar), concateneted with the stream number and iteration index.
-  * `2` - stream id (out of n streams)
-  * `6` - the iteration-index of the stream
-  * `mid=1` - message id (from 1 to `rate`)
-  * `ts=2018-11-20 00:52:11.557882` - request timestamp
-  * `delta=0:00:00.008537` - represents the server time when recieving the request minus the request creation time ~((rtt-load_time)/2). note that HW time differences between client and server might have critical impact on this calculation.
-
 
 Under The Hood
 --------------
@@ -76,8 +55,9 @@ Every message consists of several fields:
  Upon recieveing a message, the server will:
   - parse the `load` field
   - perform the required load
-  - print a log message
-  - reply an `OK` to the client
+  - print a log message using the configured `out_format`
+  - reply an `OK` to the client, also add the field `ptime`, which represents the time at which the request was parsed at the server,
+    this allows the client to calculate exact RTT, even if NTP is not synchronized.
  
 Local Development
 -----------------
@@ -97,7 +77,7 @@ git config --global user.email your.email@salosh.org
 
 # "Compile" the entity protobuf
 cd nudnik
-python -m grpc_tools.protoc --proto_path=. ./entity.proto --python_out=. --grpc_python_out=.
+python -m grpc_tools.protoc --proto_path=./nudnik/ --python_out=./nudnik/ --grpc_python_out=./nudnik/ ./entity.proto
 ```
 
 Configure
@@ -110,9 +90,11 @@ usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--server] [--name NAME] [--name-mismatch-error] [--meta META]
               [--streams STREAMS] [--interval INTERVAL] [--rate RATE]
               [--load load_type load_value] [--retry-count RETRY_COUNT]
-              [--fail-ratio FAIL_RATIO]
-              [--metrics-socket-path METRICS_SOCKET_PATH]
-              [--metrics-db-name METRICS_DB_NAME] [--debug]
+              [--fail-ratio FAIL_RATIO] [--metrics {file,influxdb}]
+              [--file-path FILE_PATH]
+              [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
+              [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
+              [--verbose] [--version]
 
 Nudnik - gRPC load tester
 
@@ -136,15 +118,21 @@ optional arguments:
                         None)
   --retry-count RETRY_COUNT
                         Number of times to re-send failed messages (Default:
-                        -1)
+                        -1, which means infinite times)
   --fail-ratio FAIL_RATIO
                         Percent of requests to intentionally fail (Default: 0)
-  --metrics-socket-path METRICS_SOCKET_PATH
-                        Full path to metrics Unix socket (Default:
+  --metrics {file,influxdb}
+                        Add metrics outputs (Default: None)
+  --file-path FILE_PATH
+                        Path to metrics file (Default: ./nudnikmetrics.out)
+  --influxdb-socket-path INFLUXDB_SOCKET_PATH
+                        Absolute path to InfluxDB Unix socket (Default:
                         /var/run/influxdb/influxdb.sock)
-  --metrics-db-name METRICS_DB_NAME
-                        Metrics database name (Default: nudnikmetrics)
+  --influxdb-database-name INFLUXDB_DATABASE_NAME
+                        InfluxDB database name (Default: nudnikmetrics)
   --debug               Debug mode (default: False)
+  --verbose, -v         Verbose mode (default: None)
+  --version             Display Nudnik version
 
 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>
 ```
@@ -169,14 +157,14 @@ nudnik --name foobar --streams 20 --interval 3 --rate 5
 nudnik --name FakeFixedLatency --streams 3 --interval 10 --rate 1 --load rtt 0.01
 ```
 
- * Run a client that identifies itself as `FakeRandomLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying.
+ * Run a client that identifies itself as `FakeRandomLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying. Export timing metrics to InfluxDB.
 ```shell
-nudnik --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5
+nudnik --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5 --metrics influxdb
 ```
 
- * Run a client that identifies itself as `FakeLatencyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying.
+ * Run a client that identifies itself as `FakeLatencyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying. Export timing metrics to a `output.csv`.
 ```shell
-nudnik --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5
+nudnik --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5 --metrics file --file-path ./output.csv
 ```
 
 * * *

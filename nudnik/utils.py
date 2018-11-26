@@ -34,37 +34,37 @@ def parse_args():
         description='Nudnik - gRPC load tester',
         epilog='2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'
     )
-    parser.add_argument('--config-file',
+    parser.add_argument('--config-file', '-f',
                         type=str,
                         help='Path to YAML config file')
-    parser.add_argument('--host',
+    parser.add_argument('--host', '-H',
                         type=str,
                         help='host')
-    parser.add_argument('--port',
+    parser.add_argument('--port', '-p',
                         type=int,
                         help='port')
-    parser.add_argument('--server',
+    parser.add_argument('--server', '-S',
                         action='store_true',
                         help='Operation mode (default: client)')
-    parser.add_argument('--name',
+    parser.add_argument('--name', '-n',
                         type=str,
                         help='Parser name')
     parser.add_argument('--name-mismatch-error',
                         action='store_true',
                         help='Fail request on name mismatch (default: False)')
-    parser.add_argument('--meta',
+    parser.add_argument('--meta', '-M',
                         type=str,
                         help='Send this extra data with every request')
-    parser.add_argument('--streams',
+    parser.add_argument('--streams', '-s',
                         type=int,
                         help='Number of streams (Default: 1)')
-    parser.add_argument('--interval',
+    parser.add_argument('--interval', '-i',
                         type=int,
                         help='Number of seconds per stream message cycle (Default: 1)')
-    parser.add_argument('--rate',
+    parser.add_argument('--rate', '-r',
                         type=int,
                         help='Number of messages per interval (Default: 10)')
-    parser.add_argument('--load',
+    parser.add_argument('--load', '-l',
                         type=str,
                         nargs=2,
                         action='append',
@@ -77,21 +77,31 @@ def parse_args():
     parser.add_argument('--fail-ratio',
                         type=int,
                         help='Percent of requests to intentionally fail (Default: 0)')
-    parser.add_argument('--metrics-socket-path',
+    parser.add_argument('--metrics', '-m',
                         type=str,
-                        help='Full path to metrics Unix socket (Default: /var/run/influxdb/influxdb.sock)')
-    parser.add_argument('--metrics-db-name',
+                        choices=['file', 'influxdb'],
+# TODO FIXME
+#                        action='append',
+                        help='Enable metrics outputs (Default: None)')
+    parser.add_argument('--file-path', '-F',
                         type=str,
-                        help='Metrics database name (Default: nudnikmetrics)')
-    parser.add_argument('--debug',
+                        help='Path to exported metrics file (Default: ./nudnikmetrics.out)')
+    parser.add_argument('--influxdb-socket-path',
+                        type=str,
+                        help='Absolute path to InfluxDB Unix socket (Default: /var/run/influxdb/influxdb.sock)')
+    parser.add_argument('--influxdb-database-name',
+                        type=str,
+                        help='InfluxDB database name (Default: nudnikmetrics)')
+    parser.add_argument('--debug', '-d',
                         action='store_true',
                         help='Debug mode (default: False)')
-    parser.add_argument('--verbose',
-                        action='store_true',
-                        help='Verbose mode (default: False)')
-    parser.add_argument('--version',
-                        action='store_true',
-                        help='Display Nudnik version (default: False)')
+    parser.add_argument('--verbose', '-v',
+                        action='count',
+                        help='Verbose mode (default: None)')
+    parser.add_argument('--version', '-V',
+                        action='version',
+                        version='Nudnik v{} - 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'.format(nudnik.__version__),
+                        help='Display Nudnik version')
 
     args = parser.parse_args()
     return args
@@ -113,11 +123,17 @@ def parse_config(args):
       'load': [],
       'retry_count': -1,
       'fail_ratio': 0,
-      'metrics_socket_path': '/var/run/influxdb/influxdb.sock',
-      'metrics_db_name': 'nudnikmetrics',
+      'metrics': None,
+      'file_path': './nudnikmetrics.out',
+      'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta}',
+      'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount}',
+      'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
+      'influxdb_database_name': 'nudnikmetrics',
+      # First field for InfluxDB is measurment name
+      'influxdb_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta} {recieved_at}',
+      'influxdb_retransmit_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount} {recieved_at}',
       'debug': False,
-      'verbose': False,
-      'version': False
+      'verbose': None,
     }
 
     for key in DEFAULTS:
@@ -137,10 +153,6 @@ def parse_config(args):
 
         setattr(cfg, key, value)
 
-    if cfg.version:
-        print('Nudnik v{version}'.format(version=nudnik.__version__))
-        sys.exit(0)
-
     try:
         with open(cfg.config_file, 'r') as ymlfile:
             ymlcfg = yaml.load(ymlfile)
@@ -156,7 +168,7 @@ def parse_config(args):
         print('Nudnik Configuration error: {}'.format(e))
         sys.exit(1)
     except FileNotFoundError:
-        print('Could not open config file {}'.format(cfg.config_file))
+        print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
         pass
 
     if cfg.verbose:
