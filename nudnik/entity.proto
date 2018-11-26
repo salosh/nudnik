@@ -53,5 +53,6 @@ message Response {
     CLIENT_ERROR = 2;
   }
   StatusCode status_code = 1;
+  int64 ptime            = 2;
 }
 

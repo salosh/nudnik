@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 #
 #    This file is part of Nudnik. <https://github.com/salosh/nudnik.git>
 #
@@ -16,6 +17,7 @@
 #
 import sys
 
+import nudnik.metrics
 import nudnik.server
 import nudnik.client
 import nudnik.utils as utils
@@ -25,12 +27,19 @@ def main():
     cfg = utils.parse_config(args)
     log = utils.get_logger(cfg.debug)
 
+    metrics_data = list()
+
+# TODO FIXME add multi-reporting capabilities
+    if cfg.metrics == 'file':
+        filemetricsthread = nudnik.metrics.FileMetrics(cfg, cfg.metrics_file, metrics_data)
+        filemetricsthread.start()
+    elif cfg.metrics == 'influxdb':
+        influxdbmetricsthread = nudnik.metrics.InfluxdbMetrics(cfg, metrics_data)
+        influxdbmetricsthread.start()
+
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        metrics = list()
-        metricsthread = nudnik.server.Metrics(cfg, metrics)
-        metricsthread.start()
-        server = nudnik.server.ParseService(cfg, metrics)
+        server = nudnik.server.ParseService(cfg, metrics_data)
         server.start_server()
     else:
         log.debug('Running Nudnik in client mode')

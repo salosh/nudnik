@@ -110,7 +110,9 @@ class MessageGenerator(threading.Thread):
                 send_was_successful = (response.status_code == 0)
                 try_count -= 1
                 retry_count += 1
-                if not send_was_successful:
+                if send_was_successful:
+                    self.log.debug('sid={},mid={},rtt={}'.format(request.stream_id,request.message_id,utils.diff_seconds(request.ctime, response.ptime)))
+                else:
                     request.rtime=time.time_ns()
                     request.rcount = retry_count
 
