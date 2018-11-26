@@ -15,7 +15,6 @@
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
 import os
-import requests_unixsocket
 from concurrent import futures
 import time
 import threading
@@ -70,18 +69,35 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             self.failed_requests += 1
             status_code = 'SERVER_ERROR'
 
-        tostring = '{},name={},mid={},ctime={},rtime={},cdelta={},rdelta={},rcount={}'.format(status_code, request.name, request.message_id, request.ctime, request.rtime, cdelta, rdelta, request.rcount)
-        self.log.debug(tostring)
-        result = {'status_code': status_code}
 
-        if request.rtime > 0:
-            data='request,status={},name={},mid={} ctime={},rtime={},cdelta={},rdelta={},rcount={} {}'.format(status_code, request.name, request.message_id, request.ctime, request.rtime, cdelta, rdelta, request.rcount, str(recieved_at))
+        if request.rtime == 0:
+            if self.cfg.metrics == 'influxdb':
+                dataformat = self.cfg.influxdb_format
+            else:
+                dataformat = self.cfg.out_format
+            data = dataformat.format(recieved_at_str=str(recieved_at),
+                                     recieved_at=recieved_at,
+                                     status_code=status_code,
+                                     req=request,
+                                     cdelta=cdelta,
+                                     rdelta=rdelta)
+            self.log.debug(data)
         else:
-            data='request,status={},name={},mid={} ctime={},cdelta={} {}'.format(status_code, request.name, request.message_id, request.ctime, cdelta, str(recieved_at))
+            if self.cfg.metrics == 'influxdb':
+                dataformat = self.cfg.influxdb_retransmit_format
+            else:
+                dataformat = self.cfg.out_retransmit_format
+            data = dataformat.format(recieved_at_str=str(recieved_at),
+                                     recieved_at=recieved_at,
+                                     status_code=status_code,
+                                     req=request,
+                                     cdelta=cdelta,
+                                     rdelta=rdelta)
+            self.log.warn(data)
 
         self.metrics.append(data)
-
-        return nudnik.entity_pb2.Response(**result)
+        response = {'status_code': status_code, 'ptime': recieved_at}
+        return nudnik.entity_pb2.Response(**response)
 
     def start_server(self):
         max_workers = max(1, (os.cpu_count() - 1))
@@ -99,39 +115,3 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         except KeyboardInterrupt:
             parse_server.stop(0)
             self.log.warn('Interrupted by user')
-
-
-class Metrics(threading.Thread):
-    def __init__(self, cfg, metrics):
-        threading.Thread.__init__(self)
-        self.gtfo = False
-
-        self.cfg = cfg
-        self.log = utils.get_logger(cfg.debug)
-        self.session = requests_unixsocket.Session()
-        self.metrics_url = 'http+unix://{}/write?db={}&precision=ns'.format(self.cfg.metrics_socket_path.replace('/', '%2F'), self.cfg.metrics_db_name)
-        self.metrics = metrics
-        self.name = '{}-metrics'.format(cfg.name)
-        self.log.debug('Metrics {} initiated'.format(self.name))
-
-    def run(self):
-        report_count = (self.cfg.streams * self.cfg.interval * self.cfg.rate) - 1
-        while not self.gtfo:
-            time_start = time.time_ns()
-
-            if len(self.metrics) > report_count:
-                r = self.session.post(self.metrics_url, data='\n'.join(self.metrics[:report_count]))
-                if r.status_code == 204:
-                    for i in range(0, report_count):
-                        self.metrics.pop(0)
-                else:
-                    self.log.error('Response: "{}"'.format(r.text))
-
-            elapsed = utils.diff_seconds(time_start, time.time_ns())
-            if elapsed < self.cfg.interval:
-                time.sleep(self.cfg.interval - elapsed)
-
-
-    def exit(self):
-        self.gtfo = 1
-
