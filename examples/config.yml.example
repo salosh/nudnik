@@ -45,7 +45,7 @@
 #
 # The rate of messages-per-second each stream should produce
 #
-#rate: 10
+#rate: 1
 
 #
 # Add fake load to every request
@@ -61,7 +61,9 @@
 #- ["cpu", "1"]
 
 #
-# Send this extra data with every request
+# Send this extra string data with every request
+# Configuring "meta: @file_name" will cause Nudnik to send the contents of <file_name> with every request.
+# Configuring "meta: random" will add an additional 4MB of /dev/urandom data to the request.
 #meta: ""
 
 #
@@ -70,4 +72,56 @@
 
 #
 # Percent of requests to fail intentionally
+#
 #fail_ratio: 0
+
+#
+# Enable metrics outputs, choose from ['file', 'influxdb']
+#
+#metrics:
+
+#
+# Path to exported metrics file
+#
+#file_path: "./nudnikmetrics.out"
+
+#
+# Enables customization of the data that will be written to <file_path>
+#
+#out_format: "{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta}"
+#
+# Enables customization of the data that will be written to <file_path> on retransmitted messages
+#
+#out_retransmit_format: "{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount}"
+
+#
+# Absolute path to InfluxDB Unix socket
+#
+#influxdb_socket_path: "/var/run/influxdb/influxdb.sock"
+
+#
+# InfluxDB database name                   
+#
+#influxdb_database_name: "nudnikmetrics"
+
+#
+# Enables customization of the data that will be sent to InfluxDB,
+# the first field ('request') is the measurment name, the fields before the first space are used as tags, and the rest as values.
+# For further information, please refer to: https://docs.influxdata.com/influxdb/v1.7/write_protocols/line_protocol_tutorial/
+#
+#influxdb_format: "request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta} {recieved_at}"
+#
+# Enables customization of the data that will be sent to InfluxDB on retransmitted messages
+# the first field ('request') is the measurment name
+#
+#influxdb_retransmit_format: "request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount} {recieved_at}"
+
+#
+# Enable debug mode
+#
+#debug: False
+
+#
+# Enable verbose mode
+#
+#verbose: False
