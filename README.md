@@ -90,7 +90,7 @@ usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--server] [--name NAME] [--name-mismatch-error] [--meta META]
               [--streams STREAMS] [--interval INTERVAL] [--rate RATE]
               [--load load_type load_value] [--retry-count RETRY_COUNT]
-              [--fail-ratio FAIL_RATIO] [--metrics {file,influxdb}]
+              [--fail-ratio FAIL_RATIO] [--metrics {stdout,file,influxdb}]
               [--file-path FILE_PATH]
               [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
               [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
@@ -100,20 +100,22 @@ Nudnik - gRPC load tester
 
 optional arguments:
   -h, --help            show this help message and exit
-  --config-file CONFIG_FILE
+  --config-file CONFIG_FILE, -f CONFIG_FILE
                         Path to YAML config file
-  --host HOST           host
-  --port PORT           port
-  --server              Operation mode (default: client)
-  --name NAME           Parser name
+  --host HOST, -H HOST  host
+  --port PORT, -p PORT  port
+  --server, -S          Operation mode (default: client)
+  --name NAME, -n NAME  Parser name
   --name-mismatch-error
                         Fail request on name mismatch (default: False)
-  --meta META           Send this extra data with every request
-  --streams STREAMS     Number of streams (Default: 1)
-  --interval INTERVAL   Number of seconds per stream message cycle (Default:
+  --meta META, -M META  Send this extra data with every request
+  --streams STREAMS, -s STREAMS
+                        Number of streams (Default: 1)
+  --interval INTERVAL, -i INTERVAL
+                        Number of seconds per stream message cycle (Default:
                         1)
-  --rate RATE           Number of messages per interval (Default: 10)
-  --load load_type load_value
+  --rate RATE, -r RATE  Number of messages per interval (Default: 10)
+  --load load_type load_value, -l load_type load_value
                         Add artificial load [rtt, rttr, cpu, mem] (Default:
                         None)
   --retry-count RETRY_COUNT
@@ -121,18 +123,19 @@ optional arguments:
                         -1, which means infinite times)
   --fail-ratio FAIL_RATIO
                         Percent of requests to intentionally fail (Default: 0)
-  --metrics {file,influxdb}
-                        Add metrics outputs (Default: None)
-  --file-path FILE_PATH
-                        Path to metrics file (Default: ./nudnikmetrics.out)
+  --metrics {stdout,file,influxdb}, -m {stdout,file,influxdb}
+                        Enable metrics outputs (Default: None)
+  --file-path FILE_PATH, -F FILE_PATH
+                        Path to exported metrics file (Default:
+                        ./nudnikmetrics.out)
   --influxdb-socket-path INFLUXDB_SOCKET_PATH
                         Absolute path to InfluxDB Unix socket (Default:
                         /var/run/influxdb/influxdb.sock)
   --influxdb-database-name INFLUXDB_DATABASE_NAME
                         InfluxDB database name (Default: nudnikmetrics)
-  --debug               Debug mode (default: False)
+  --debug, -d           Debug mode (default: False)
   --verbose, -v         Verbose mode (default: None)
-  --version             Display Nudnik version
+  --version, -V         Display Nudnik version
 
 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>
 ```

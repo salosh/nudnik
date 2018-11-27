@@ -38,11 +38,11 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
     def parse(self, request, context):
 
-        recieved_at = time.time_ns()
-
         # Generate fake load for incoming request
         for load in self.cfg.load_list:
             utils.generate_load(self.log, load)
+
+        recieved_at = time.time_ns()
 
         cdelta = utils.diff_nanoseconds(request.ctime, recieved_at)
 
@@ -70,34 +70,13 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             status_code = 'SERVER_ERROR'
 
 
-        if request.rtime == 0:
-            if self.cfg.metrics == 'influxdb':
-                dataformat = self.cfg.influxdb_format
-            else:
-                dataformat = self.cfg.out_format
-            data = dataformat.format(recieved_at_str=str(recieved_at),
-                                     recieved_at=recieved_at,
-                                     status_code=status_code,
-                                     req=request,
-                                     cdelta=cdelta,
-                                     rdelta=rdelta)
-            self.log.debug(data)
-        else:
-            if self.cfg.metrics == 'influxdb':
-                dataformat = self.cfg.influxdb_retransmit_format
-            else:
-                dataformat = self.cfg.out_retransmit_format
-            data = dataformat.format(recieved_at_str=str(recieved_at),
-                                     recieved_at=recieved_at,
-                                     status_code=status_code,
-                                     req=request,
-                                     cdelta=cdelta,
-                                     rdelta=rdelta)
-            self.log.warn(data)
+        response = {'status_code': status_code, 'ptime': time.time_ns()}
+        grpc_response = nudnik.entity_pb2.Response(**response)
+        if self.metrics is not None:
+            stat = nudnik.metrics.Stat(request, grpc_response, recieved_at)
+            self.metrics.append(stat)
 
-        self.metrics.append(data)
-        response = {'status_code': status_code, 'ptime': recieved_at}
-        return nudnik.entity_pb2.Response(**response)
+        return grpc_response
 
     def start_server(self):
         max_workers = max(1, (os.cpu_count() - 1))
