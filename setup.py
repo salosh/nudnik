@@ -19,6 +19,14 @@ from setuptools import setup
 
 import setuptools
 
+import re
+
+def version():
+    INITFILE="nudnik/__init__.py"
+    initstring = open('nudnik/__init__.py', "rt").read()
+    version = re.search(r"^__version__ = '(.*)'", initstring, re.M).group(1)
+    return version
+
 with open("README.md", "r") as f:
     long_description = f.read()
 
@@ -27,7 +35,7 @@ with open('requirements.txt') as f:
 
 setuptools.setup(
      name='nudnik',
-     version='0.0.7',
+     version=version(),
      url="https://github.com/salosh/nudnik.git",
      scripts=['nudnik/bin/nudnik'],
      author="Salo Shp",

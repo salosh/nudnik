@@ -27,26 +27,21 @@ def main():
     cfg = utils.parse_config(args)
     log = utils.get_logger(cfg.debug)
 
-    metrics_data = list()
-
-# TODO FIXME add multi-reporting capabilities
-    if cfg.metrics == 'file':
-        filemetricsthread = nudnik.metrics.FileMetrics(cfg, cfg.metrics_file, metrics_data)
-        filemetricsthread.start()
-    elif cfg.metrics == 'influxdb':
-        influxdbmetricsthread = nudnik.metrics.InfluxdbMetrics(cfg, metrics_data)
-        influxdbmetricsthread.start()
+    metricsthread = None
+    if cfg.metrics:
+        metricsthread = nudnik.metrics.Metrics(cfg)
+        metricsthread.start()
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.server.ParseService(cfg, metrics_data)
+        server = nudnik.server.ParseService(cfg, metricsthread)
         server.start_server()
     else:
         log.debug('Running Nudnik in client mode')
         streams = list()
         log.debug('Starting {} streams'.format(cfg.streams))
         for i in range(1, cfg.streams + 1):
-            stream = nudnik.client.Stream(cfg, i)
+            stream = nudnik.client.Stream(cfg, i, metricsthread)
             streams.append(stream)
             try:
                 stream.start()
