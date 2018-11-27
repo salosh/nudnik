@@ -20,84 +20,148 @@ import requests_unixsocket
 
 import nudnik.utils as utils
 
-class MetricsThread(threading.Thread):
+class Metrics(threading.Thread):
     def __init__(self, cfg):
         threading.Thread.__init__(self)
         self.gtfo = False
-
+        self.metrics = list()
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
-        self.report_count = max(1, (self.cfg.streams * self.cfg.interval * self.cfg.rate) - 1)
+        self.workers = list()
+
+        if cfg.metrics == 'file':
+            self.file_path = cfg.file_path
+        elif cfg.metrics == 'influxdb':
+            if cfg.influxdb_protocol == 'http+unix':
+                self.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
+            else:
+                self.influxdb_host = cfg.influxdb_host
+
+            create_influxdb_database(self, self.log, cfg.influxdb_protocol, self.influxdb_host, cfg.influxdb_database_name)
+            self.influxdb_url = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
+                                                        influxdb_host=self.influxdb_host,
+                                                        influxdb_database_name=cfg.influxdb_database_name)
+
+        self.log.debug('Metrics thread initiated')
 
     def run(self):
-        pass
+        self.log.debug('Running {}'.format(self.name))
+        while not self.gtfo:
+            if self.cfg.verbose:
+                self.log.debug('Reporting {} items'.format(len(self.metrics)))
 
-    def _report(self, metrics):
-        pass
+            time_start = time.time_ns()
+
+            current_report = list(self.metrics)
+            current_report_length = len(current_report)
+            if len(current_report) > 1:
+                self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
+
+                if self.cfg.metrics == 'file':
+                    thread = FileMetrics(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
+                    thread.start()
+                    self.workers.append(thread)
+                elif self.cfg.metrics == 'influxdb':
+                    thread = InfluxdbMetrics(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
+                    thread.start()
+                    self.workers.append(thread)
+                elif self.cfg.metrics == 'stdout':
+                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
+                        self.log.debug(stat)
+
+                for i in range(0, current_report_length):
+                    self.metrics.pop(0)
+
+                while len(self.workers) > 0:
+                    for index, thread in enumerate(self.workers):
+                        thread.join()
+                        self.workers.pop(index)
+
+            elapsed = utils.diff_seconds(time_start, time.time_ns())
+            if elapsed < self.cfg.interval:
+                time.sleep(self.cfg.interval - elapsed)
+
+    def append(self, stat):
+        self.metrics.append(stat)
 
     def exit(self):
         self.gtfo = 1
 
 class FileMetrics(threading.Thread):
-    def __init__(self, cfg, path, data):
-        MetricsThread.__init__(self, cfg)
-        self.log = utils.get_logger(cfg.debug)
-        self.metrics_url = path
+    def __init__(self, log, path, data, format, retransmit_format):
+        threading.Thread.__init__(self)
+        self.log = log
+        self.path = path
         self.data = data
-        self.name = '{}-file-metrics'.format(cfg.name)
-        self.log.debug('Metrics {} initiated in file mode'.format(self.name))
+        self.format = format
+        self.retransmit_format = retransmit_format
 
     def run(self):
-        self.log.debug('Running {}'.format(self.name))
-
-        while not self.gtfo:
-            time_start = time.time_ns()
-
-            if len(self.data) > self.report_count:
-                self.log.debug('Reporting {}/{} items'.format(len(self.data[:self.report_count]),len(self.data)))
-                self._report(self.data[:self.report_count])
-                for i in range(0, self.report_count):
-                    self.data.pop(0)
-
-            elapsed = utils.diff_seconds(time_start, time.time_ns())
-            if elapsed < self.cfg.interval:
-                time.sleep(self.cfg.interval - elapsed)
-
-    def _report(self, metrics):
-        self.log.debug('Writing {} items to file'.format(len(metrics)))
-        with open(self.metrics_url, 'a') as metricsfile:
-            metricsfile.write('\n'.join(metrics))
+        data = list()
+        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
+            data.append(stat)
+        self.log.debug('Writing {} items to {}'.format(len(data), self.path))
+        with open(self.path, 'a') as metricsfile:
+            metricsfile.write('\n'.join(data))
             metricsfile.write('\n')
+        return True
 
 class InfluxdbMetrics(threading.Thread):
-    def __init__(self, cfg, data):
-        MetricsThread.__init__(self, cfg)
-        self.log = utils.get_logger(cfg.debug)
+    def __init__(self, log, url, data, format, retransmit_format):
+        threading.Thread.__init__(self)
+        self.log = log
         self.session = requests_unixsocket.Session()
-        self.metrics_url = 'http+unix://{}/write?db={}&precision=ns'.format(cfg.influxdb_socket_path.replace('/', '%2F'), cfg.influxdb_database_name)
+        self.url = url
         self.data = data
-        self.name = '{}-influxb-metrics'.format(cfg.name)
-        self.log.debug('Metrics {} initiated in Influxdb mode'.format(self.name))
+        self.format = format
+        self.retransmit_format = retransmit_format
 
     def run(self):
-        self.log.debug('Running {}'.format(self.name))
+        data = list()
+        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
+            data.append(stat)
 
-        while not self.gtfo:
-            time_start = time.time_ns()
-
-            if len(self.data) > self.report_count:
-                self.log.debug('Reporting {}/{} items'.format(len(self.data[:self.report_count]),len(self.data)))
-                self._report(self.data[:self.report_count])
-                for i in range(0, self.report_count):
-                    self.data.pop(0)
-
-            elapsed = utils.diff_seconds(time_start, time.time_ns())
-            if elapsed < self.cfg.interval:
-                time.sleep(self.cfg.interval - elapsed)
-
-    def _report(self, metrics):
-        self.log.debug('Writing {} items to socket'.format(len(metrics)))
-        res = self.session.post(self.metrics_url, data='\n'.join(metrics))
+        self.log.debug('Writing {} items to InfluxDB'.format(len(data)))
+        session = requests_unixsocket.Session()
+        res = session.post(self.url, data='\n'.join(data))
+        session.close()
         if res.status_code != 204:
-            self.log.error('Response: "{}"'.format(r.text))
+            self.log.error('Response: "{}"'.format(res.text))
+            return False
+        return True
+
+def create_influxdb_database(self, log, protocol, host, database_name):
+    # https://docs.influxdata.com/influxdb/v1.7/tools/api/
+    # https://docs.influxdata.com/influxdb/v1.7/query_language/database_management/#create-database
+    query ='q=CREATE DATABASE "{}"'.format(database_name)
+    session = requests_unixsocket.Session()
+    res = session.post('{}://{}/query?{}'.format(protocol, host, query))
+    session.close()
+    if res.status_code == 200:
+        log.debug('Response to {}: "{}"'.format(query, res.text))
+    else:
+        log.error('Response to {}: "{}"'.format(query, res.text))
+        raise RuntimeException(res.text)
+
+class Stat(object):
+    def __init__(self, request, response, recieved_at):
+        self.request = request
+        self.response = response
+        self.recieved_at = recieved_at
+
+def _parse_stats(stats, format, retransmit_format):
+    for stat in stats:
+        if stat.request.rcount == 0:
+            dataformat = format
+        else:
+            dataformat = retransmit_format
+
+        statstring = dataformat.format(recieved_at_str=str(stat.recieved_at),
+                                       recieved_at=stat.recieved_at,
+                                       status_code=stat.response.status_code,
+                                       req=stat.request,
+                                       cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.response.ptime),
+                                       rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.response.ptime),
+                                       rtt=utils.diff_nanoseconds(stat.request.ctime, stat.recieved_at))
+        yield statstring
 

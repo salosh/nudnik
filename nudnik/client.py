@@ -40,7 +40,7 @@ class ParserClient(object):
         return self.stub.parse(request)
 
 class Stream(threading.Thread):
-    def __init__(self, cfg, stream_id):
+    def __init__(self, cfg, stream_id, metrics):
         threading.Thread.__init__(self)
 
         self.cfg = cfg
@@ -48,6 +48,7 @@ class Stream(threading.Thread):
 
         self.gtfo = False
         self.stream_id = stream_id
+        self.metrics = metrics
         self.name = '{}-{}'.format(cfg.name, stream_id)
         self.log.debug('Stream {} initiated'.format(self.name))
 
@@ -58,7 +59,7 @@ class Stream(threading.Thread):
         while not self.gtfo:
             time_start = time.time_ns()
             try:
-                fg = MessageGenerator(self.cfg, self.log, self.name, self.stream_id, generator_sequence_number)
+                fg = MessageGenerator(self.cfg, self.log, self.name, self.stream_id, generator_sequence_number, self.metrics)
                 fg.start()
             except Exception as e:
                 self.log.error(e)
@@ -72,13 +73,14 @@ class Stream(threading.Thread):
 
 class MessageGenerator(threading.Thread):
 
-    def __init__(self, cfg, log, name, stream_id, generator_sequence_number):
+    def __init__(self, cfg, log, name, stream_id, generator_sequence_number, metrics):
         threading.Thread.__init__(self)
 
         self.cfg = cfg
         self.log = log
         self.stream_id = stream_id
         self.generator_sequence_number = generator_sequence_number
+        self.metrics = metrics
         self.started_at = time.time_ns()
         self.name = name
 
@@ -107,12 +109,15 @@ class MessageGenerator(threading.Thread):
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 response = client.get_response_for_request(request)
+                recieved_at = time.time_ns()
                 send_was_successful = (response.status_code == 0)
-                try_count -= 1
-                retry_count += 1
                 if send_was_successful:
-                    self.log.debug('sid={},mid={},rtt={}'.format(request.stream_id,request.message_id,utils.diff_seconds(request.ctime, response.ptime)))
+                    if self.metrics is not None:
+                        stat = nudnik.metrics.Stat(request, response, recieved_at)
+                        self.metrics.append(stat)
                 else:
+                    try_count -= 1
+                    retry_count += 1
                     request.rtime=time.time_ns()
                     request.rcount = retry_count
 

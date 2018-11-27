@@ -21,6 +21,7 @@ import os
 import sys
 import time
 from datetime import datetime
+import random
 
 import nudnik
 
@@ -79,7 +80,7 @@ def parse_args():
                         help='Percent of requests to intentionally fail (Default: 0)')
     parser.add_argument('--metrics', '-m',
                         type=str,
-                        choices=['file', 'influxdb'],
+                        choices=['stdout', 'file', 'influxdb'],
 # TODO FIXME
 #                        action='append',
                         help='Enable metrics outputs (Default: None)')
@@ -125,13 +126,16 @@ def parse_config(args):
       'fail_ratio': 0,
       'metrics': None,
       'file_path': './nudnikmetrics.out',
-      'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta}',
-      'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount}',
+      'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
+      'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
       'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
+      'influxdb_protocol': 'http+unix',
+      'influxdb_host': '127.0.0.1:8086',
       'influxdb_database_name': 'nudnikmetrics',
+      'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
       # First field for InfluxDB is measurment name
-      'influxdb_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta} {recieved_at}',
-      'influxdb_retransmit_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount} {recieved_at}',
+      'influxdb_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
+      'influxdb_retransmit_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
       'verbose': None,
     }
