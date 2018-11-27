@@ -20,6 +20,7 @@ import yaml
 import os
 import sys
 import time
+import re
 from datetime import datetime
 import random
 
@@ -76,7 +77,7 @@ def parse_args():
                         type=int,
                         help='Number of times to re-send failed messages (Default: -1, which means infinite times)')
     parser.add_argument('--fail-ratio',
-                        type=int,
+                        type=str,
                         help='Percent of requests to intentionally fail (Default: 0)')
     parser.add_argument('--metrics', '-m',
                         type=str,
@@ -174,6 +175,10 @@ def parse_config(args):
     except FileNotFoundError:
         print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
         pass
+
+    # Clear '%' sign if provided
+    fail_ratio = (re.match(r"(([0-9])*(\.)*([0-9])*)", cfg.fail_ratio)).groups()[0]
+    cfg.fail_ratio = float(fail_ratio) if (fail_ratio != '') else 0.0
 
     if cfg.verbose:
         for key in DEFAULTS:
