@@ -85,6 +85,8 @@ class MessageGenerator(threading.Thread):
         self.name = name
 
     def run(self):
+        if self.cfg.vv:
+            self.log.debug('MessageGenerator {} initiated, sending {} messages'.format(self.name, self.cfg.rate))
         time_start = time.time_ns()
 
         client = ParserClient(self.cfg.host, self.cfg.port)
@@ -110,12 +112,15 @@ class MessageGenerator(threading.Thread):
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 response = client.get_response_for_request(request)
                 recieved_at = time.time_ns()
-                send_was_successful = (response.status_code == 0)
+
+                send_was_successful = ((response.status_code == 0) and (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio))
+
                 if send_was_successful:
-                    if self.metrics is not None:
-                        stat = nudnik.metrics.Stat(request, response, recieved_at)
-                        self.metrics.append(stat)
+                    self.metrics.add_success()
+                    stat = nudnik.metrics.Stat(request, response, recieved_at)
+                    self.metrics.append(stat)
                 else:
+                    self.metrics.add_failure()
                     try_count -= 1
                     retry_count += 1
                     request.rtime=time.time_ns()
