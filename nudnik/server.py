@@ -32,8 +32,6 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         super(ParseService, self).__init__()
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
-        self.successful_requests = 0
-        self.failed_requests = 0
         self.metrics = metrics
 
     def parse(self, request, context):
@@ -55,26 +53,19 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         if self.cfg.name_mismatch_error is True and not request.name.startswith(self.cfg.name):
             raise NameMismatchException('Client name "{}" does not match server prefix "{}"'.format(request.name, self.cfg.name))
 
-        total = self.failed_requests + self.successful_requests
-        try:
-            current_fail_ratio = float((self.failed_requests / total) * 100)
-        except ZeroDivisionError:
-            current_fail_ratio = 100
-
-        if current_fail_ratio >= self.cfg.fail_ratio:
-            self.successful_requests += 1
+        if (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio):
+            self.metrics.add_success()
             status_code = 'OK'
         else:
-            self.log.debug('failed={},success={},current_fail_ratio={},conf_fail_ratio={}'.format(self.failed_requests, self.successful_requests, current_fail_ratio, self.cfg.fail_ratio))
-            self.failed_requests += 1
+            self.metrics.add_failure()
             status_code = 'SERVER_ERROR'
 
 
         response = {'status_code': status_code, 'ptime': time.time_ns()}
         grpc_response = nudnik.entity_pb2.Response(**response)
-        if self.metrics is not None:
-            stat = nudnik.metrics.Stat(request, grpc_response, recieved_at)
-            self.metrics.append(stat)
+
+        stat = nudnik.metrics.Stat(request, grpc_response, recieved_at)
+        self.metrics.append(stat)
 
         return grpc_response
 
