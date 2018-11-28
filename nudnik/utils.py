@@ -20,6 +20,7 @@ import yaml
 import os
 import sys
 import time
+import re
 from datetime import datetime
 import random
 
@@ -76,13 +77,12 @@ def parse_args():
                         type=int,
                         help='Number of times to re-send failed messages (Default: -1, which means infinite times)')
     parser.add_argument('--fail-ratio',
-                        type=int,
+                        type=str,
                         help='Percent of requests to intentionally fail (Default: 0)')
     parser.add_argument('--metrics', '-m',
                         type=str,
+                        action='append',
                         choices=['stdout', 'file', 'influxdb'],
-# TODO FIXME
-#                        action='append',
                         help='Enable metrics outputs (Default: None)')
     parser.add_argument('--file-path', '-F',
                         type=str,
@@ -124,7 +124,7 @@ def parse_config(args):
       'load': [],
       'retry_count': -1,
       'fail_ratio': 0,
-      'metrics': None,
+      'metrics': [],
       'file_path': './nudnikmetrics.out',
       'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
       'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
@@ -137,7 +137,7 @@ def parse_config(args):
       'influxdb_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
       'influxdb_retransmit_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
-      'verbose': None,
+      'verbose': 0,
     }
 
     for key in DEFAULTS:
@@ -175,7 +175,18 @@ def parse_config(args):
         print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
         pass
 
-    if cfg.verbose:
+    # Clear '%' sign if provided
+    fail_ratio = (re.match(r"(([0-9])*(\.)*([0-9])*)", str(cfg.fail_ratio))).groups()[0]
+    cfg.fail_ratio = float(fail_ratio) if (fail_ratio != '') else 0.0
+
+    for i in range(1, 6):
+        attr = 'v'*i
+        setattr(cfg, attr, cfg.verbose >= i)
+
+    if cfg.v:
+        cfg.debug = True
+
+    if cfg.vvvvv:
         for key in DEFAULTS:
             print('{} - {}'.format(key, getattr(cfg, key)))
 

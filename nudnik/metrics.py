@@ -21,17 +21,21 @@ import requests_unixsocket
 import nudnik.utils as utils
 
 class Metrics(threading.Thread):
+
     def __init__(self, cfg):
         threading.Thread.__init__(self)
         self.gtfo = False
+        self.lock = threading.Lock()
         self.metrics = list()
+        self.successful_requests = 0
+        self.failed_requests = 0
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
 
-        if cfg.metrics == 'file':
+        if 'file' in self.cfg.metrics:
             self.file_path = cfg.file_path
-        elif cfg.metrics == 'influxdb':
+        if 'influxdb' in self.cfg.metrics:
             if cfg.influxdb_protocol == 'http+unix':
                 self.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
             else:
@@ -47,7 +51,7 @@ class Metrics(threading.Thread):
     def run(self):
         self.log.debug('Running {}'.format(self.name))
         while not self.gtfo:
-            if self.cfg.verbose:
+            if self.cfg.vv:
                 self.log.debug('Reporting {} items'.format(len(self.metrics)))
 
             time_start = time.time_ns()
@@ -55,19 +59,25 @@ class Metrics(threading.Thread):
             current_report = list(self.metrics)
             current_report_length = len(current_report)
             if len(current_report) > 1:
-                self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
+                if self.cfg.vvv:
+                    self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
 
-                if self.cfg.metrics == 'file':
+
+                if self.cfg.debug:
+                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
+                        self.log.debug(stat)
+                elif 'stdout' in self.cfg.metrics:
+                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
+                        self.log.info(stat)
+
+                if 'file' in self.cfg.metrics:
                     thread = FileMetrics(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
-                elif self.cfg.metrics == 'influxdb':
+                if 'influxdb' in self.cfg.metrics:
                     thread = InfluxdbMetrics(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
-                elif self.cfg.metrics == 'stdout':
-                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
-                        self.log.debug(stat)
 
                 for i in range(0, current_report_length):
                     self.metrics.pop(0)
@@ -80,6 +90,29 @@ class Metrics(threading.Thread):
             elapsed = utils.diff_seconds(time_start, time.time_ns())
             if elapsed < self.cfg.interval:
                 time.sleep(self.cfg.interval - elapsed)
+
+    def add_success(self):
+        with self.lock:
+            self.successful_requests += 1
+
+    def add_failure(self):
+        with self.lock:
+            self.failed_requests += 1
+
+    def get_fail_ratio(self):
+        total = self.failed_requests + self.successful_requests
+        try:
+            current_fail_ratio = float((self.failed_requests / total) * 100)
+        except ZeroDivisionError:
+            current_fail_ratio = 100.0
+
+        if self.cfg.vvv:
+            logformat = 'failed={},success={},current_fail_ratio={},conf_fail_ratio={}'
+            self.log.debug(logformat.format(self.failed_requests,
+                                            self.successful_requests,
+                                            current_fail_ratio,
+                                            self.cfg.fail_ratio))
+        return current_fail_ratio
 
     def append(self, stat):
         self.metrics.append(stat)

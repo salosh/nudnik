@@ -27,10 +27,8 @@ def main():
     cfg = utils.parse_config(args)
     log = utils.get_logger(cfg.debug)
 
-    metricsthread = None
-    if cfg.metrics:
-        metricsthread = nudnik.metrics.Metrics(cfg)
-        metricsthread.start()
+    metricsthread = nudnik.metrics.Metrics(cfg)
+    metricsthread.start()
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
