@@ -48,6 +48,13 @@
 #rate: 1
 
 #
+# Compute statistical process level random crashes (Default: 0)
+# The highest possible value is (3600 / interval), this means 100% chaos applied
+# configuring 1 means a *statistical* failure every hour or so.
+#
+#chaos: 0
+
+#
 # Add fake load to every request
 # You may specify as much as you like, and several of the same type, however they will be executed FIFO
 # Possible values:
@@ -109,12 +116,12 @@
 # the first field ('request') is the measurment name, the fields before the first space are used as tags, and the rest as values.
 # For further information, please refer to: https://docs.influxdata.com/influxdb/v1.7/write_protocols/line_protocol_tutorial/
 #
-#influxdb_format: "request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta} {recieved_at}"
+#influxdb_format: "request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},cdelta={cdelta} {recieved_at}"
 #
 # Enables customization of the data that will be sent to InfluxDB on retransmitted messages
 # the first field ('request') is the measurment name
 #
-#influxdb_retransmit_format: "request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount} {recieved_at}"
+#influxdb_retransmit_format: "request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount} {recieved_at}"
 
 #
 # Enable debug mode
@@ -122,6 +129,6 @@
 #debug: False
 
 #
-# Enable verbose mode
+# Set verbose mode
 #
-#verbose: False
+#verbose:

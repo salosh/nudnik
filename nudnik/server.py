@@ -18,6 +18,7 @@ import os
 from concurrent import futures
 import time
 import threading
+import random
 
 import grpc
 
@@ -40,7 +41,7 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         for load in self.cfg.load_list:
             utils.generate_load(self.log, load)
 
-        recieved_at = time.time_ns()
+        recieved_at = utils.time_ns()
 
         cdelta = utils.diff_nanoseconds(request.ctime, recieved_at)
 
@@ -61,17 +62,22 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             status_code = 'SERVER_ERROR'
 
 
-        response = {'status_code': status_code, 'ptime': time.time_ns()}
+        response = {'status_code': status_code, 'ptime': utils.time_ns()}
         grpc_response = nudnik.entity_pb2.Response(**response)
 
         stat = nudnik.metrics.Stat(request, grpc_response, recieved_at)
         self.metrics.append(stat)
 
+        if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
+            chaos_exception = utils.ChaosException(self.cfg.chaos_string)
+            self.log.fatal(chaos_exception)
+            raise chaos_exception
+
         return grpc_response
 
     def start_server(self):
-        max_workers = max(1, (os.cpu_count() - 1))
-#        max_workers = os.cpu_count() * 2
+        max_workers = max(1, (os.sysconf('SC_NPROCESSORS_ONLN') - 1))
+#        max_workers = os.sysconf('SC_NPROCESSORS_ONLN') * 2
         parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
         nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.metrics),parse_server)
         parse_server.add_insecure_port('[::]:{}'.format(self.cfg.port))

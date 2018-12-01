@@ -24,6 +24,9 @@ import re
 from datetime import datetime
 import random
 
+if 'FileNotFoundError' not in sys.modules:
+    from exceptions import IOError as FileNotFoundError
+
 import nudnik
 
 _BILLION = 10**9
@@ -66,6 +69,9 @@ def parse_args():
     parser.add_argument('--rate', '-r',
                         type=int,
                         help='Number of messages per interval (Default: 10)')
+    parser.add_argument('--chaos', '-c',
+                        type=int,
+                        help='Compute statistical process level random crashes [0, 3600/interval] (Default: 0)')
     parser.add_argument('--load', '-l',
                         type=str,
                         nargs=2,
@@ -98,7 +104,7 @@ def parse_args():
                         help='Debug mode (default: False)')
     parser.add_argument('--verbose', '-v',
                         action='count',
-                        help='Verbose mode (default: None)')
+                        help='Verbose mode, specify multiple times for extra verbosity (default: None)')
     parser.add_argument('--version', '-V',
                         action='version',
                         version='Nudnik v{} - 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'.format(nudnik.__version__),
@@ -121,6 +127,8 @@ def parse_config(args):
       'streams': 1,
       'interval': 1,
       'rate': 1,
+      'chaos': 0,
+      'chaos_string': 'In all chaos there is a cosmos, in all disorder a secret order. #Carl_Jung_FTW',
       'load': [],
       'retry_count': -1,
       'fail_ratio': 0,
@@ -134,8 +142,8 @@ def parse_config(args):
       'influxdb_database_name': 'nudnikmetrics',
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
       # First field for InfluxDB is measurment name
-      'influxdb_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
-      'influxdb_retransmit_format': 'request,status={status_code},name={req.name},mid={req.message_id} ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
+      'influxdb_format': 'request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
+      'influxdb_retransmit_format': 'request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
       'verbose': 0,
     }
@@ -174,6 +182,8 @@ def parse_config(args):
     except FileNotFoundError:
         print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
         pass
+
+    cfg.cycle_per_hour = int( 3600 / cfg.interval )
 
     # Clear '%' sign if provided
     fail_ratio = (re.match(r"(([0-9])*(\.)*([0-9])*)", str(cfg.fail_ratio))).groups()[0]
@@ -237,13 +247,17 @@ def generate_load(logger, load):
     elif load.load_type == 2:
         time_load = load.value
         logger.debug('CPU loading for {} seconds'.format(time_load))
-        for i in range(0, os.cpu_count()):
+        for i in range(0, os.sysconf('SC_NPROCESSORS_ONLN')):
             cpu_load_thread = FakeLoadCpu(time_load).start()
     elif load.load_type == 3:
         amount_in_mb = load.value
         logger.debug('Loading {} MB to RAM'.format(amount_in_mb))
         mem_load_thread = FakeLoadMem(amount_in_mb)
         mem_load_thread.start()
+
+def time_ns():
+    # Python < 3.7 doesn't support time.time_ns(), this function unifies metrics measurments
+    return int(("%.9f" % time.time()).replace('.',''))
 
 def diff_nanoseconds(before, after):
     return (after - before)
@@ -253,3 +267,5 @@ def diff_seconds(before, after):
 
 def time_to_date(timestamp):
     return datetime.fromtimestamp( timestamp / _BILLION )
+
+class ChaosException(Exception): pass

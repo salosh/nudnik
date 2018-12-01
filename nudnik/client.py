@@ -16,6 +16,8 @@
 #
 import time
 import threading
+import os
+import random
 
 import grpc
 
@@ -45,7 +47,6 @@ class Stream(threading.Thread):
 
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
-
         self.gtfo = False
         self.stream_id = stream_id
         self.metrics = metrics
@@ -57,14 +58,23 @@ class Stream(threading.Thread):
 
         generator_sequence_number = 0
         while not self.gtfo:
-            time_start = time.time_ns()
+            time_start = utils.time_ns()
+
             try:
                 fg = MessageGenerator(self.cfg, self.log, self.name, self.stream_id, generator_sequence_number, self.metrics)
                 fg.start()
             except Exception as e:
-                self.log.error(e)
+                self.log.fatal(e)
+                self.exit()
             generator_sequence_number += 1
-            elapsed = utils.diff_seconds(time_start, time.time_ns())
+
+            if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
+                chaos_exception = utils.ChaosException(self.cfg.chaos_string)
+                self.log.fatal(chaos_exception)
+                self.exit()
+                raise chaos_exception
+
+            elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.interval:
                 time.sleep(self.cfg.interval - elapsed)
 
@@ -81,13 +91,13 @@ class MessageGenerator(threading.Thread):
         self.stream_id = stream_id
         self.generator_sequence_number = generator_sequence_number
         self.metrics = metrics
-        self.started_at = time.time_ns()
+        self.started_at = utils.time_ns()
         self.name = name
 
     def run(self):
         if self.cfg.vv:
             self.log.debug('MessageGenerator {} initiated, sending {} messages'.format(self.name, self.cfg.rate))
-        time_start = time.time_ns()
+        time_start = utils.time_ns()
 
         client = ParserClient(self.cfg.host, self.cfg.port)
 
@@ -99,7 +109,7 @@ class MessageGenerator(threading.Thread):
                                      stream_id=self.stream_id,
 #                                     sequence_id=self.generator_sequence_number,
                                      message_id=(self.generator_sequence_number * self.cfg.rate) + index,
-                                     ctime=time.time_ns(),
+                                     ctime=utils.time_ns(),
                                      meta=self.cfg.meta,
                                      load=self.cfg.load_list)
 
@@ -111,7 +121,7 @@ class MessageGenerator(threading.Thread):
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 response = client.get_response_for_request(request)
-                recieved_at = time.time_ns()
+                recieved_at = utils.time_ns()
 
                 send_was_successful = ((response.status_code == 0) and (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio))
 
@@ -123,10 +133,10 @@ class MessageGenerator(threading.Thread):
                     self.metrics.add_failure()
                     try_count -= 1
                     retry_count += 1
-                    request.rtime=time.time_ns()
+                    request.rtime=utils.time_ns()
                     request.rcount = retry_count
 
-        elapsed = utils.diff_seconds(time_start, time.time_ns())
+        elapsed = utils.diff_seconds(time_start, utils.time_ns())
         if elapsed > self.cfg.interval:
             self.log.warn('cdelta {} for rate {} exceeds interval {}'.format(elapsed, self.cfg.rate, self.cfg.interval))
 
