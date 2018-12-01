@@ -54,7 +54,7 @@ class Metrics(threading.Thread):
             if self.cfg.vv:
                 self.log.debug('Reporting {} items'.format(len(self.metrics)))
 
-            time_start = time.time_ns()
+            time_start = utils.time_ns()
 
             current_report = list(self.metrics)
             current_report_length = len(current_report)
@@ -87,7 +87,7 @@ class Metrics(threading.Thread):
                         thread.join()
                         self.workers.pop(index)
 
-            elapsed = utils.diff_seconds(time_start, time.time_ns())
+            elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.interval:
                 time.sleep(self.cfg.interval - elapsed)
 
