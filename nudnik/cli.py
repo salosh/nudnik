@@ -41,23 +41,23 @@ def main():
         for i in range(1, cfg.streams + 1):
             stream = nudnik.client.Stream(cfg, i, metricsthread)
             streams.append(stream)
-            try:
-                stream.start()
-            except Exception as e:
-                log.error('{}'.format(e))
+            stream.start()
 
         while len(streams) > 0:
             for index, stream in enumerate(streams):
                 try:
-                    stream.join(0.25)
+                    if stream.gtfo:
+                        streams.pop(index)
+                    else:
+                        stream.join(0.25)
                 except KeyboardInterrupt:
                     for stream in streams:
                         stream.exit()
                         streams.pop(index)
-                except Exception as e:
-                    log.error(e)
 
-        log.debug('You are the weakest link, goodbye!'.format(''))
+    metricsthread.exit()
+    log.debug('You are the weakest link, goodbye!'.format(''))
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())

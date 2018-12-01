@@ -46,11 +46,10 @@ setuptools.setup(
      long_description_content_type="text/markdown",
      packages=setuptools.find_packages(),
      install_requires=install_reqs,
-     python_requires='~=3.3',
      classifiers=[
          "Environment :: Console",
          "Intended Audience :: System Administrators",
-         "Programming Language :: Python :: 3.7",
+         "Programming Language :: Python",
          "Topic :: System :: Distributed Computing",
          "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
          "Natural Language :: English",
