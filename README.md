@@ -89,9 +89,9 @@ nudnik -h
 usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--server] [--name NAME] [--name-mismatch-error] [--meta META]
               [--streams STREAMS] [--interval INTERVAL] [--rate RATE]
-              [--load load_type load_value] [--retry-count RETRY_COUNT]
-              [--fail-ratio FAIL_RATIO] [--metrics {stdout,file,influxdb}]
-              [--file-path FILE_PATH]
+              [--chaos CHAOS] [--load load_type load_value]
+              [--retry-count RETRY_COUNT] [--fail-ratio FAIL_RATIO]
+              [--metrics {stdout,file,influxdb}] [--file-path FILE_PATH]
               [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
               [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
               [--verbose] [--version]
@@ -115,6 +115,9 @@ optional arguments:
                         Number of seconds per stream message cycle (Default:
                         1)
   --rate RATE, -r RATE  Number of messages per interval (Default: 10)
+  --chaos CHAOS, -c CHAOS
+                        Compute statistical process level random crashes [0,
+                        3600/interval] (Default: 0)
   --load load_type load_value, -l load_type load_value
                         Add artificial load [rtt, rttr, cpu, mem] (Default:
                         None)
@@ -134,7 +137,8 @@ optional arguments:
   --influxdb-database-name INFLUXDB_DATABASE_NAME
                         InfluxDB database name (Default: nudnikmetrics)
   --debug, -d           Debug mode (default: False)
-  --verbose, -v         Verbose mode (default: None)
+  --verbose, -v         Verbose mode, specify multiple times for extra
+                        verbosity (default: None)
   --version, -V         Display Nudnik version
 
 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>
