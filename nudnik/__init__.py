@@ -23,6 +23,6 @@ sys.path.append(os.path.dirname(__file__))
 import nudnik.entity_pb2
 import nudnik.entity_pb2_grpc
 
-__version__ = '0.0.10'
+__version__ = '0.0.11'
 
 
