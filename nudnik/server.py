@@ -51,8 +51,15 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         else:
             rdelta = 0
 
-        if self.cfg.name_mismatch_error is True and not request.name.startswith(self.cfg.name):
-            raise NameMismatchException('Client name "{}" does not match server prefix "{}"'.format(request.name, self.cfg.name))
+        if self.cfg.name_mismatch_error == 'prefix':
+            if not request.name.startswith(self.cfg.name):
+                raise NameMismatchException('Client name "{}" must match server prefix "{}"'.format(request.name, self.cfg.name))
+        elif self.cfg.name_mismatch_error == 'suffix':
+            if not request.name.endswith(self.cfg.name):
+                raise NameMismatchException('Client name "{}" must match server suffix "{}"'.format(request.name, self.cfg.name))
+        elif self.cfg.name_mismatch_error == 'exact':
+            if not request.name == self.cfg.name:
+                raise NameMismatchException('Client name "{}" must exactly match server name "{}"'.format(request.name, self.cfg.name))
 
         if (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio):
             self.metrics.add_success()
@@ -80,10 +87,11 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 #        max_workers = os.sysconf('SC_NPROCESSORS_ONLN') * 2
         parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
         nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.metrics),parse_server)
-        parse_server.add_insecure_port('[::]:{}'.format(self.cfg.port))
+        bind_host = self.cfg.host if self.cfg.host != '0.0.0.0' else '[::]'
+        parse_server.add_insecure_port('{}:{}'.format(bind_host, self.cfg.port))
         # Non blocking
         parse_server.start()
-        self.log.info('Parser Server binded to port {}'.format(self.cfg.port))
+        self.log.info('Parser Server binded to {}:{}'.format(bind_host, self.cfg.port))
 
         try:
             while True:
@@ -91,3 +99,5 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         except KeyboardInterrupt:
             parse_server.stop(0)
             self.log.warn('Interrupted by user')
+
+class NameMismatchException(Exception): pass
