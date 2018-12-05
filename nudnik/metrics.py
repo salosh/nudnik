@@ -51,17 +51,13 @@ class Metrics(threading.Thread):
     def run(self):
         self.log.debug('Running {}'.format(self.name))
         while not self.gtfo:
-            if self.cfg.vv:
-                self.log.debug('Reporting {} items'.format(len(self.metrics)))
-
             time_start = utils.time_ns()
 
             current_report = list(self.metrics)
             current_report_length = len(current_report)
-            if len(current_report) > 1:
+            if current_report_length > 0:
                 if self.cfg.vvv:
                     self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
-
 
                 if self.cfg.debug:
                     for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
@@ -80,12 +76,17 @@ class Metrics(threading.Thread):
                     self.workers.append(thread)
 
                 for i in range(0, current_report_length):
+                    if self.cfg.vvvvv:
+                        self.log.debug('Popping {}/{} items'.format(i, current_report_length))
                     self.metrics.pop(0)
 
                 while len(self.workers) > 0:
                     for index, thread in enumerate(self.workers):
                         thread.join()
                         self.workers.pop(index)
+
+            elif self.cfg.vvvvv:
+                self.log.debug('Nothing to report')
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.interval:
