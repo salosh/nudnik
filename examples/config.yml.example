@@ -33,9 +33,19 @@
 #name: "NAME"
 
 #
+# Fail request on name mismatch, choose from ['prefix', 'suffix', 'exact']
+#
+#name_mismatch_error:
+
+#
 # Number of streams that should be created
 #
 #streams: 1
+
+#
+# Calculate stream ID from this initial index (Default: 0)
+#
+#initial_stream_index: 0
 
 #
 # The number of seconds per stream message cycle
@@ -81,6 +91,22 @@
 # Percent of requests to fail intentionally
 #
 #fail_ratio: 0
+
+#
+# Enable "Are You OK?" HTTP/1.1 API (default: False)
+# You might want to enable this for k8s 'liveness' support, or AWS ELB '/status' health-checks
+#
+#ruok: False
+
+#
+# "Are You OK?" HTTP/1.1 API port (default: 80)
+#
+#ruok_port: 80
+
+#
+# "Are You OK?" HTTP/1.1 API path (Default: /ruok)
+#
+#ruok_path: "/ruok"
 
 #
 # Enable metrics outputs, choose from ['stdout', 'file', 'influxdb']

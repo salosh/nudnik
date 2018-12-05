@@ -24,7 +24,7 @@ import re
 from datetime import datetime
 import random
 
-if 'FileNotFoundError' not in sys.modules:
+if sys.version_info < (3, 0):
     from exceptions import IOError as FileNotFoundError
 
 import nudnik
@@ -55,14 +55,18 @@ def parse_args():
                         type=str,
                         help='Parser name')
     parser.add_argument('--name-mismatch-error',
-                        action='store_true',
-                        help='Fail request on name mismatch (default: False)')
+                        type=str,
+                        choices=['prefix', 'suffix', 'exact'],
+                        help='Fail request on name mismatch (default: None)')
     parser.add_argument('--meta', '-M',
                         type=str,
                         help='Send this extra data with every request')
     parser.add_argument('--streams', '-s',
                         type=int,
                         help='Number of streams (Default: 1)')
+    parser.add_argument('--initial-stream-index',
+                        type=int,
+                        help='Calculate stream ID from this initial index (Default: 0)')
     parser.add_argument('--interval', '-i',
                         type=int,
                         help='Number of seconds per stream message cycle (Default: 1)')
@@ -85,6 +89,15 @@ def parse_args():
     parser.add_argument('--fail-ratio',
                         type=str,
                         help='Percent of requests to intentionally fail (Default: 0)')
+    parser.add_argument('--ruok', '-R',
+                        action='store_true',
+                        help='Enable "Are You OK?" HTTP/1.1 API (default: False)')
+    parser.add_argument('--ruok-port',
+                        type=int,
+                        help='"Are You OK?" HTTP/1.1 API port (default: 80)')
+    parser.add_argument('--ruok-path',
+                        type=str,
+                        help='"Are You OK?" HTTP/1.1 API path (Default: /ruok)')
     parser.add_argument('--metrics', '-m',
                         type=str,
                         action='append',
@@ -122,9 +135,10 @@ def parse_config(args):
       'port': 5410,
       'server': False,
       'name': 'NAME',
-      'name_mismatch_error': False,
+      'name_mismatch_error': None,
       'meta': None,
       'streams': 1,
+      'initial_stream_index': 0,
       'interval': 1,
       'rate': 1,
       'chaos': 0,
@@ -132,6 +146,9 @@ def parse_config(args):
       'load': [],
       'retry_count': -1,
       'fail_ratio': 0,
+      'ruok': False,
+      'ruok_port': 80,
+      'ruok_path': '/ruok',
       'metrics': [],
       'file_path': './nudnikmetrics.out',
       'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
@@ -148,22 +165,29 @@ def parse_config(args):
       'verbose': 0,
     }
 
+    setattr(cfg, 'config_file', DEFAULTS['config_file'])
+
     for key in DEFAULTS:
         env_key_name = 'NUDNIK_{key_name}'.format(key_name=key.upper())
+        value = None
         if key in args.__dict__ and vars(args)[key]:
             value = vars(args)[key]
         elif env_key_name in os.environ:
             value = os.environ[env_key_name]
-            if isinstance(DEFAULTS[key], int):
+            if type(DEFAULTS[key]) is bool:
+                if value in [True, 'TRUE', 'True', 'true', 'YES', 'Yes', 'yes', '1', 1]:
+                    value = True
+                elif value in [False, 'FALSE', 'False', 'false', 'NO', 'No', 'no', '0', 0]:
+                    value = False
+            elif isinstance(DEFAULTS[key], int):
                 value = int(value)
             elif isinstance(DEFAULTS[key], str):
                 value = str(value)
             else:
                 value = value
-        else:
-            value = DEFAULTS[key]
 
-        setattr(cfg, key, value)
+        if value is not None:
+            setattr(cfg, key, value)
 
     try:
         with open(cfg.config_file, 'r') as ymlfile:
@@ -173,7 +197,7 @@ def parse_config(args):
                 raise FileNotFoundError
 
             for confkey in DEFAULTS:
-                if ymlcfg[confkey] is not None and not getattr(cfg, confkey, None):
+                if ymlcfg[confkey] is not None and not getattr(cfg, confkey, None) is None:
                     setattr(cfg, confkey, ymlcfg[confkey])
 
     except yaml.parser.ParserError as e:
@@ -182,6 +206,10 @@ def parse_config(args):
     except FileNotFoundError:
         print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
         pass
+
+    for key in DEFAULTS:
+        if getattr(cfg, key, None) is None:
+            setattr(cfg, key, DEFAULTS[key])
 
     cfg.cycle_per_hour = int( 3600 / cfg.interval )
 
@@ -197,6 +225,8 @@ def parse_config(args):
         cfg.debug = True
 
     if cfg.vvvvv:
+        print('Python version: {}'.format(sys.version_info))
+        print('Effective configuration values:')
         for key in DEFAULTS:
             print('{} - {}'.format(key, getattr(cfg, key)))
 
