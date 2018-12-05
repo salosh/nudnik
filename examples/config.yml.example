@@ -58,6 +58,11 @@
 #rate: 1
 
 #
+# Count of total messages that should be sent (Default: 0 == unlimited)
+#
+#count: 0
+
+#
 # Compute statistical process level random crashes (Default: 0)
 # The highest possible value is (3600 / interval), this means 100% chaos applied
 # configuring 1 means a *statistical* failure every hour or so.

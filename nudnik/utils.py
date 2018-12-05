@@ -73,6 +73,9 @@ def parse_args():
     parser.add_argument('--rate', '-r',
                         type=int,
                         help='Number of messages per interval (Default: 10)')
+    parser.add_argument('--count', '-C',
+                        type=int,
+                        help='Count of total messages that should be sent (Default: 0 == unlimited)')
     parser.add_argument('--chaos', '-c',
                         type=int,
                         help='Compute statistical process level random crashes [0, 3600/interval] (Default: 0)')
@@ -141,6 +144,7 @@ def parse_config(args):
       'initial_stream_index': 0,
       'interval': 1,
       'rate': 1,
+      'count': 0,
       'chaos': 0,
       'chaos_string': 'In all chaos there is a cosmos, in all disorder a secret order. #Carl_Jung_FTW',
       'load': [],
