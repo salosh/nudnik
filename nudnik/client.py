@@ -57,8 +57,13 @@ class Stream(threading.Thread):
         self.log.debug('Stream {} started, sending {} messages per second'.format(self.name, (self.cfg.interval * self.cfg.rate)))
 
         generator_sequence_number = 0
+
         while not self.gtfo:
             time_start = utils.time_ns()
+
+            if (self.cfg.count > 0) and (generator_sequence_number * self.cfg.rate >= self.cfg.count):
+                self.exit()
+                return
 
             try:
                 fg = MessageGenerator(self.cfg, self.log, self.name, self.stream_id, generator_sequence_number, self.metrics)
@@ -66,6 +71,7 @@ class Stream(threading.Thread):
             except Exception as e:
                 self.log.fatal(e)
                 self.exit()
+
             generator_sequence_number += 1
 
             if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
@@ -105,10 +111,11 @@ class MessageGenerator(threading.Thread):
             if 'meta_filepath' in self.cfg and self.cfg.meta_filepath is not None and self.cfg.meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
                 self.cfg.meta = os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
 
+            message_id = (self.generator_sequence_number * self.cfg.rate) + index
             request = nudnik.entity_pb2.Request(name=self.name,
                                      stream_id=self.stream_id,
 #                                     sequence_id=self.generator_sequence_number,
-                                     message_id=(self.generator_sequence_number * self.cfg.rate) + index,
+                                     message_id=message_id,
                                      ctime=utils.time_ns(),
                                      meta=self.cfg.meta,
                                      load=self.cfg.load_list)
