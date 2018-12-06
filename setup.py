@@ -46,7 +46,6 @@ setuptools.setup(
      long_description_content_type="text/markdown",
      packages=setuptools.find_packages(),
      install_requires=install_reqs,
-     use_2to3=True,
      classifiers=[
          "Environment :: Console",
          "Intended Audience :: System Administrators",
