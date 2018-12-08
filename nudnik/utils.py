@@ -201,7 +201,7 @@ def parse_config(args):
                 raise FileNotFoundError
 
             for confkey in DEFAULTS:
-                if ymlcfg[confkey] is not None and not getattr(cfg, confkey, None) is None:
+                if confkey in ymlcfg and ymlcfg[confkey] is not None:
                     setattr(cfg, confkey, ymlcfg[confkey])
 
     except yaml.parser.ParserError as e:
