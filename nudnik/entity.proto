@@ -40,10 +40,11 @@ message Request {
   int32  sequence_id = 3;
   int32  message_id  = 4;
   int64  ctime       = 5;
-  int64  rtime       = 6;
-  int32  rcount      = 7;
-  bytes  meta        = 8;
-  repeated Load load = 9;
+  int64  stime       = 6;
+  int64  rtime       = 7;
+  int32  rcount      = 8;
+  bytes  meta        = 9;
+  repeated Load load = 10;
 }
 
 message Response {
@@ -53,6 +54,7 @@ message Response {
     CLIENT_ERROR = 2;
   }
   StatusCode status_code = 1;
-  int64 ptime            = 2;
+  int64 ctime            = 2;
+  int64 stime            = 3;
 }
 

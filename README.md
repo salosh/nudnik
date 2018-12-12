@@ -114,7 +114,7 @@ optional arguments:
                         Fail request on name mismatch (default: None)
   --meta META, -M META  Send this extra data with every request
   --workers WORKERS, -w WORKERS
-                        Number of workers (Default: 1)
+                        Number of workers (Default: number of CPU cores)
   --streams STREAMS, -s STREAMS
                         Number of streams (Default: 1)
   --initial-stream-index INITIAL_STREAM_INDEX
