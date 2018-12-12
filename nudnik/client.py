@@ -15,9 +15,14 @@
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
 import time
-import threading
 import os
+import sys
 import random
+if (sys.version_info >= (3, 0)):
+    import queue as queue
+else:
+    import Queue as queue
+import threading
 
 import grpc
 
@@ -50,29 +55,42 @@ class Stream(threading.Thread):
         self.gtfo = False
         self.stream_id = stream_id
         self.metrics = metrics
+        self.queue = queue.PriorityQueue()
         self.name = '{}-{}'.format(cfg.name, stream_id)
         self.log.debug('Stream {} initiated'.format(self.name))
 
     def run(self):
         self.log.debug('Stream {} started, sending {} messages per second'.format(self.name, (self.cfg.interval * self.cfg.rate)))
 
-        generator_sequence_number = 0
+        sequence_id = 0
+
+        for i in range(0, self.cfg.workers):
+            sender_name = '{}-{}'.format(self.name, i)
+            thread = MessageSender(self.cfg, self.log, sender_name, self.queue, self.metrics)
+            thread.daemon = True
+            thread.start()
 
         while not self.gtfo:
             time_start = utils.time_ns()
 
-            if (self.cfg.count > 0) and (generator_sequence_number * self.cfg.rate >= self.cfg.count):
-                self.exit()
-                return
+            for index in range(0, self.cfg.rate):
 
-            try:
-                fg = MessageGenerator(self.cfg, self.log, self.name, self.stream_id, generator_sequence_number, self.metrics)
-                fg.start()
-            except Exception as e:
-                self.log.fatal(e)
-                self.exit()
+                message_id = (sequence_id * self.cfg.rate) + index
+                if (self.cfg.count > 0) and (message_id >= self.cfg.count):
+                    self.exit()
+                    return
+                request = nudnik.entity_pb2.Request(name=self.name,
+                                                    stream_id=self.stream_id,
+                                                    sequence_id=sequence_id,
+                                                    message_id=message_id,
+                                                    ctime=utils.time_ns(),
+                                                    load=self.cfg.load_list)
+                self.queue.put((index, request))
 
-            generator_sequence_number += 1
+            if self.cfg.vvv:
+                self.log.debug('Active workers/tasks: {}/{}'.format(threading.active_count(), self.queue.qsize()))
+
+            sequence_id += 1
 
             if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
                 chaos_exception = utils.ChaosException(self.cfg.chaos_string)
@@ -87,38 +105,32 @@ class Stream(threading.Thread):
     def exit(self):
         self.gtfo = 1
 
-class MessageGenerator(threading.Thread):
+class MessageSender(threading.Thread):
 
-    def __init__(self, cfg, log, name, stream_id, generator_sequence_number, metrics):
+    def __init__(self, cfg, log, name, queue, metrics):
         threading.Thread.__init__(self)
+        self.gtfo = False
 
         self.cfg = cfg
         self.log = log
-        self.stream_id = stream_id
-        self.generator_sequence_number = generator_sequence_number
+        self.queue = queue
         self.metrics = metrics
-        self.started_at = utils.time_ns()
         self.name = name
 
     def run(self):
         if self.cfg.vv:
-            self.log.debug('MessageGenerator {} initiated, sending {} messages'.format(self.name, self.cfg.rate))
-        time_start = utils.time_ns()
+            self.log.debug('MessageSender {} initiated'.format(self.name))
 
         client = ParserClient(self.cfg.host, self.cfg.port)
 
-        for index in range(1, self.cfg.rate + 1):
-            if 'meta_filepath' in self.cfg and self.cfg.meta_filepath is not None and self.cfg.meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
-                self.cfg.meta = os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
+        while not self.gtfo:
+            time_start = utils.time_ns()
+            (index, request) = self.queue.get()
+            if self.cfg.vvvvv:
+                self.log.debug('Handling message_id {}'.format(request.message_id))
 
-            message_id = (self.generator_sequence_number * self.cfg.rate) + index
-            request = nudnik.entity_pb2.Request(name=self.name,
-                                     stream_id=self.stream_id,
-#                                     sequence_id=self.generator_sequence_number,
-                                     message_id=message_id,
-                                     ctime=utils.time_ns(),
-                                     meta=self.cfg.meta,
-                                     load=self.cfg.load_list)
+            if 'meta_filepath' in self.cfg and self.cfg.meta_filepath is not None and self.cfg.meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
+                request.meta = os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
 
             for load in request.load:
                 utils.generate_load(self.log, load)
@@ -136,6 +148,7 @@ class MessageGenerator(threading.Thread):
                     self.metrics.add_success()
                     stat = nudnik.metrics.Stat(request, response, recieved_at)
                     self.metrics.append(stat)
+                    self.queue.task_done()
                 else:
                     self.metrics.add_failure()
                     try_count -= 1
@@ -143,7 +156,11 @@ class MessageGenerator(threading.Thread):
                     request.rtime=utils.time_ns()
                     request.rcount = retry_count
 
-        elapsed = utils.diff_seconds(time_start, utils.time_ns())
-        if elapsed > self.cfg.interval:
-            self.log.warn('cdelta {} for rate {} exceeds interval {}'.format(elapsed, self.cfg.rate, self.cfg.interval))
+            if self.cfg.vv:
+                total_rtt = utils.diff_seconds(request.ctime, recieved_at) * self.cfg.rate
+                if total_rtt > self.cfg.interval * 1.1:
+                    self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
+
+    def exit(self):
+        self.gtfo = 1
 

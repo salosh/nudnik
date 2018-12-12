@@ -89,13 +89,13 @@ nudnik -h
 usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--server] [--name NAME]
               [--name-mismatch-error {prefix,suffix,exact}] [--meta META]
-              [--streams STREAMS]
+              [--workers WORKERS] [--streams STREAMS]
               [--initial-stream-index INITIAL_STREAM_INDEX]
-              [--interval INTERVAL] [--rate RATE] [--chaos CHAOS]
-              [--load load_type load_value] [--retry-count RETRY_COUNT]
-              [--fail-ratio FAIL_RATIO] [--ruok] [--ruok-port RUOK_PORT]
-              [--ruok-path RUOK_PATH] [--metrics {stdout,file,influxdb}]
-              [--file-path FILE_PATH]
+              [--interval INTERVAL] [--rate RATE] [--count COUNT]
+              [--chaos CHAOS] [--load load_type load_value]
+              [--retry-count RETRY_COUNT] [--fail-ratio FAIL_RATIO] [--ruok]
+              [--ruok-port RUOK_PORT] [--ruok-path RUOK_PATH]
+              [--metrics {stdout,file,influxdb}] [--file-path FILE_PATH]
               [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
               [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
               [--verbose] [--version]
@@ -113,6 +113,8 @@ optional arguments:
   --name-mismatch-error {prefix,suffix,exact}
                         Fail request on name mismatch (default: None)
   --meta META, -M META  Send this extra data with every request
+  --workers WORKERS, -w WORKERS
+                        Number of workers (Default: 1)
   --streams STREAMS, -s STREAMS
                         Number of streams (Default: 1)
   --initial-stream-index INITIAL_STREAM_INDEX
@@ -122,6 +124,9 @@ optional arguments:
                         Number of seconds per stream message cycle (Default:
                         1)
   --rate RATE, -r RATE  Number of messages per interval (Default: 10)
+  --count COUNT, -C COUNT
+                        Count of total messages that should be sent (Default:
+                        0 == unlimited)
   --chaos CHAOS, -c CHAOS
                         Compute statistical process level random crashes [0,
                         3600/interval] (Default: 0)

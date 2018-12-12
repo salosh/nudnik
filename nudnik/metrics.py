@@ -82,10 +82,12 @@ class Metrics(threading.Thread):
 
                 while len(self.workers) > 0:
                     for index, thread in enumerate(self.workers):
-                        thread.join()
-                        self.workers.pop(index)
+                        if thread.is_alive():
+                            thread.join(0.25)
+                        else:
+                            self.workers.pop(index)
 
-            elif self.cfg.vvvvv:
+            elif self.cfg.vvvv:
                 self.log.debug('Nothing to report')
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
@@ -107,7 +109,7 @@ class Metrics(threading.Thread):
         except ZeroDivisionError:
             current_fail_ratio = 100.0
 
-        if self.cfg.vvv:
+        if self.cfg.vvvvv:
             logformat = 'failed={},success={},current_fail_ratio={},conf_fail_ratio={}'
             self.log.debug(logformat.format(self.failed_requests,
                                             self.successful_requests,
