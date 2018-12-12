@@ -63,7 +63,7 @@ def parse_args():
                         help='Send this extra data with every request')
     parser.add_argument('--workers', '-w',
                         type=int,
-                        help='Number of workers (Default: 1)')
+                        help='Number of workers (Default: number of CPU cores)')
     parser.add_argument('--streams', '-s',
                         type=int,
                         help='Number of streams (Default: 1)')
@@ -143,7 +143,7 @@ def parse_config(args):
       'name': 'NAME',
       'name_mismatch_error': None,
       'meta': None,
-      'workers': 1,
+      'workers': os.sysconf('SC_NPROCESSORS_ONLN'),
       'streams': 1,
       'initial_stream_index': 0,
       'interval': 1,
@@ -166,8 +166,8 @@ def parse_config(args):
       'influxdb_host': '127.0.0.1:8086',
       'influxdb_database_name': 'nudnikmetrics',
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
-      'influxdb_format': 'status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
-      'influxdb_retransmit_format': 'status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
+      'influxdb_format': 'status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
+      'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
       'verbose': 0,
     }
@@ -219,8 +219,8 @@ def parse_config(args):
             setattr(cfg, key, DEFAULTS[key])
 
     cfg.influxdb_measurement_name = 'server' if cfg.server else 'client'
-    cfg.influxdb_format = '{},{}'.format(cfg.influxdb_measurement_name, cfg.influxdb_format)
-    cfg.influxdb_retransmit_format = '{},{}'.format(cfg.influxdb_measurement_name, cfg.influxdb_retransmit_format)
+    cfg.influxdb_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_format)
+    cfg.influxdb_retransmit_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_retransmit_format)
 
     cfg.cycle_per_hour = int( 3600 / cfg.interval )
 
