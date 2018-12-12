@@ -34,9 +34,11 @@ def main():
 
     if cfg.ruok is True:
         ruokthread = ruok.Ruok(cfg)
+        ruokthread.daemon = True
         ruokthread.start()
 
     metricsthread = nudnik.metrics.Metrics(cfg)
+    metricsthread.daemon = True
     metricsthread.start()
 
     if cfg.server:
@@ -49,25 +51,24 @@ def main():
         log.debug('Starting {} streams'.format(cfg.streams))
         streams = list()
         for i in range(0, cfg.streams):
-            stream_id = cfg.initial_stream_index + i
-            stream = nudnik.client.Stream(cfg, stream_id, metricsthread)
-            streams.append(stream)
-            stream.start()
+            try:
+                stream_id = cfg.initial_stream_index + i
+                stream = nudnik.client.Stream(cfg, stream_id, metricsthread)
+                streams.append(stream)
+                stream.start()
+            except Exception as e:
+                log.fatal('Fatal error during stream initialization: {}'.format(e))
 
         try:
             while len(streams) > 0:
                 for index, stream in enumerate(streams):
-                    if stream.gtfo:
+                    if stream.gtfo or not stream.is_alive():
                         streams.pop(index)
                     else:
                         stream.join(0.25)
         except KeyboardInterrupt:
             for s in streams:
                 s.exit()
-
-    if cfg.ruok is True:
-        ruokthread.exit()
-    metricsthread.exit()
 
     log.debug('You are the weakest link, goodbye!'.format(''))
     return 1

@@ -1,5 +1,5 @@
 PyYAML>=3.13
-grpcio>=1.16.1
+grpcio>=1.17.0
 protobuf>=3.6.1
 #grpcio-tools>=1.16.1
 requests-unixsocket>=0.1.5
