@@ -55,7 +55,7 @@ class Stream(threading.Thread):
         self.gtfo = False
         self.stream_id = stream_id
         self.metrics = metrics
-        self.queue = queue.PriorityQueue()
+        self.queue = queue.Queue()
         self.name = '{}-{}'.format(cfg.name, stream_id)
         self.log.debug('Stream {} initiated'.format(self.name))
 
@@ -85,7 +85,7 @@ class Stream(threading.Thread):
                                                     message_id=message_id,
                                                     ctime=utils.time_ns(),
                                                     load=self.cfg.load_list)
-                self.queue.put((index, request))
+                self.queue.put(request)
 
             if self.cfg.vvv:
                 self.log.debug('Active workers/tasks: {}/{}'.format(threading.active_count(), self.queue.qsize()))
@@ -124,8 +124,8 @@ class MessageSender(threading.Thread):
         client = ParserClient(self.cfg.host, self.cfg.port)
 
         while not self.gtfo:
-            time_start = utils.time_ns()
-            (index, request) = self.queue.get()
+            request = self.queue.get()
+
             if self.cfg.vvvvv:
                 self.log.debug('Handling message_id {}'.format(request.message_id))
 
@@ -139,6 +139,7 @@ class MessageSender(threading.Thread):
             try_count = 1 + self.cfg.retry_count
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
+                request.stime=utils.time_ns()
                 response = client.get_response_for_request(request)
                 recieved_at = utils.time_ns()
 
@@ -148,7 +149,6 @@ class MessageSender(threading.Thread):
                     self.metrics.add_success()
                     stat = nudnik.metrics.Stat(request, response, recieved_at)
                     self.metrics.append(stat)
-                    self.queue.task_done()
                 else:
                     self.metrics.add_failure()
                     try_count -= 1
@@ -158,7 +158,7 @@ class MessageSender(threading.Thread):
 
             if self.cfg.vv:
                 total_rtt = utils.diff_seconds(request.ctime, recieved_at) * self.cfg.rate
-                if total_rtt > self.cfg.interval * 1.1:
+                if total_rtt > self.cfg.interval:
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 
     def exit(self):

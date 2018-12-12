@@ -32,6 +32,7 @@ class Metrics(threading.Thread):
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
+        self.monitoring_interval = cfg.interval
 
         if 'file' in self.cfg.metrics:
             self.file_path = cfg.file_path
@@ -91,8 +92,8 @@ class Metrics(threading.Thread):
                 self.log.debug('Nothing to report')
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
-            if elapsed < self.cfg.interval:
-                time.sleep(self.cfg.interval - elapsed)
+            if elapsed < self.monitoring_interval:
+                time.sleep(self.monitoring_interval - elapsed)
 
     def add_success(self):
         with self.lock:
@@ -196,8 +197,11 @@ def _parse_stats(stats, format, retransmit_format):
                                        recieved_at=stat.recieved_at,
                                        status_code=stat.response.status_code,
                                        req=stat.request,
-                                       cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.response.ptime),
-                                       rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.response.ptime),
+                                       cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
+                                       rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.request.stime),
+                                       sdelta=utils.diff_nanoseconds(stat.request.stime, stat.response.ctime),
+                                       pdelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.stime),
+                                       bdelta=utils.diff_nanoseconds(stat.response.stime, stat.recieved_at),
                                        rtt=utils.diff_nanoseconds(stat.request.ctime, stat.recieved_at))
         yield statstring
 
