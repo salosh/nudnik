@@ -14,7 +14,6 @@
 #    You should have received a copy of the GNU General Public License
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
-import os
 from concurrent import futures
 import time
 import threading
@@ -83,15 +82,13 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         return grpc_response
 
     def start_server(self):
-        max_workers = max(1, (os.sysconf('SC_NPROCESSORS_ONLN') - 1))
-#        max_workers = os.sysconf('SC_NPROCESSORS_ONLN') * 2
-        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
+        parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=self.cfg.workers))
         nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.metrics),parse_server)
         bind_host = self.cfg.host if self.cfg.host != '0.0.0.0' else '[::]'
         parse_server.add_insecure_port('{}:{}'.format(bind_host, self.cfg.port))
         # Non blocking
         parse_server.start()
-        self.log.info('Parser Server binded to {}:{}'.format(bind_host, self.cfg.port))
+        self.log.info('Parser Server "{}" binded to "{}:{}"'.format(self.cfg.name, bind_host, self.cfg.port))
 
         try:
             while True:

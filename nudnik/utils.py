@@ -29,7 +29,7 @@ if sys.version_info < (3, 0):
 
 import nudnik
 
-_BILLION = 10**9
+_BILLION = float(10**9)
 
 class NudnikConfiguration(dict):
     pass
@@ -61,6 +61,9 @@ def parse_args():
     parser.add_argument('--meta', '-M',
                         type=str,
                         help='Send this extra data with every request')
+    parser.add_argument('--workers', '-w',
+                        type=int,
+                        help='Number of workers (Default: 1)')
     parser.add_argument('--streams', '-s',
                         type=int,
                         help='Number of streams (Default: 1)')
@@ -140,6 +143,7 @@ def parse_config(args):
       'name': 'NAME',
       'name_mismatch_error': None,
       'meta': None,
+      'workers': 1,
       'streams': 1,
       'initial_stream_index': 0,
       'interval': 1,
@@ -162,9 +166,8 @@ def parse_config(args):
       'influxdb_host': '127.0.0.1:8086',
       'influxdb_database_name': 'nudnikmetrics',
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
-      # First field for InfluxDB is measurment name
-      'influxdb_format': 'request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
-      'influxdb_retransmit_format': 'request,status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
+      'influxdb_format': 'status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},rtt={rtt} {recieved_at}',
+      'influxdb_retransmit_format': 'status={status_code},name={req.name} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
       'verbose': 0,
     }
@@ -201,7 +204,7 @@ def parse_config(args):
                 raise FileNotFoundError
 
             for confkey in DEFAULTS:
-                if confkey in ymlcfg and ymlcfg[confkey] is not None:
+                if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
                     setattr(cfg, confkey, ymlcfg[confkey])
 
     except yaml.parser.ParserError as e:
@@ -214,6 +217,10 @@ def parse_config(args):
     for key in DEFAULTS:
         if getattr(cfg, key, None) is None:
             setattr(cfg, key, DEFAULTS[key])
+
+    cfg.influxdb_measurement_name = 'server' if cfg.server else 'client'
+    cfg.influxdb_format = '{},{}'.format(cfg.influxdb_measurement_name, cfg.influxdb_format)
+    cfg.influxdb_retransmit_format = '{},{}'.format(cfg.influxdb_measurement_name, cfg.influxdb_retransmit_format)
 
     cfg.cycle_per_hour = int( 3600 / cfg.interval )
 
