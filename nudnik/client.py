@@ -15,7 +15,6 @@
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
 import time
-import os
 import sys
 import random
 if (sys.version_info >= (3, 0)):
@@ -64,9 +63,8 @@ class Stream(threading.Thread):
 
         sequence_id = 0
 
-        for i in range(0, self.cfg.workers):
-            sender_name = '{}-{}'.format(self.name, i)
-            thread = MessageSender(self.cfg, self.log, sender_name, self.queue, self.metrics)
+        for worker_id in range(0, self.cfg.workers):
+            thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, self.queue, self.metrics)
             thread.daemon = True
             thread.start()
 
@@ -79,7 +77,7 @@ class Stream(threading.Thread):
                 if (self.cfg.count > 0) and (message_id >= self.cfg.count):
                     self.exit()
                     return
-                request = nudnik.entity_pb2.Request(name=self.name,
+                request = nudnik.entity_pb2.Request(name=self.cfg.name,
                                                     stream_id=self.stream_id,
                                                     sequence_id=sequence_id,
                                                     message_id=message_id,
@@ -107,7 +105,7 @@ class Stream(threading.Thread):
 
 class MessageSender(threading.Thread):
 
-    def __init__(self, cfg, log, name, queue, metrics):
+    def __init__(self, cfg, log, stream_id, worker_id, queue, metrics):
         threading.Thread.__init__(self)
         self.gtfo = False
 
@@ -115,7 +113,8 @@ class MessageSender(threading.Thread):
         self.log = log
         self.queue = queue
         self.metrics = metrics
-        self.name = name
+        self.worker_id = worker_id
+        self.name = '{}-{}-{}'.format(cfg.name, stream_id, worker_id)
 
     def run(self):
         if self.cfg.vv:
@@ -125,12 +124,12 @@ class MessageSender(threading.Thread):
 
         while not self.gtfo:
             request = self.queue.get()
+            request.worker_id = self.worker_id
 
             if self.cfg.vvvvv:
                 self.log.debug('Handling message_id {}'.format(request.message_id))
 
-            if 'meta_filepath' in self.cfg and self.cfg.meta_filepath is not None and self.cfg.meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
-                request.meta = os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
+            request.meta = utils.get_meta(self.cfg)
 
             for load in request.load:
                 utils.generate_load(self.log, load)
