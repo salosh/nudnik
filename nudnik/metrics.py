@@ -32,7 +32,6 @@ class Metrics(threading.Thread):
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
-        self.monitoring_interval = cfg.interval
 
         if 'file' in self.cfg.metrics:
             self.file_path = cfg.file_path
@@ -92,8 +91,8 @@ class Metrics(threading.Thread):
                 self.log.debug('Nothing to report')
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
-            if elapsed < self.monitoring_interval:
-                time.sleep(self.monitoring_interval - elapsed)
+            if elapsed < self.cfg.metrics_interval:
+                time.sleep(self.cfg.metrics_interval - elapsed)
 
     def add_success(self):
         with self.lock:

@@ -29,6 +29,8 @@ message Load {
     rttr = 1;
     cpu  = 2;
     mem  = 3;
+    cmd  = 4;
+    fcmd = 5;
   }
   LoadType load_type = 1;
   string value = 2;
@@ -37,14 +39,15 @@ message Load {
 message Request {
   string name        = 1;
   int32  stream_id   = 2;
-  int32  sequence_id = 3;
-  int32  message_id  = 4;
-  int64  ctime       = 5;
-  int64  stime       = 6;
-  int64  rtime       = 7;
-  int32  rcount      = 8;
-  bytes  meta        = 9;
-  repeated Load load = 10;
+  int32  worker_id   = 3;
+  int32  sequence_id = 4;
+  int32  message_id  = 5;
+  int64  ctime       = 6;
+  int64  stime       = 7;
+  int64  rtime       = 8;
+  int32  rcount      = 9;
+  bytes  meta        = 10;
+  repeated Load load = 11;
 }
 
 message Response {
