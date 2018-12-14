@@ -19,6 +19,8 @@ import argparse
 import yaml
 import os
 import sys
+import threading
+import subprocess
 import time
 import re
 from datetime import datetime
@@ -30,6 +32,7 @@ if sys.version_info < (3, 0):
 import nudnik
 
 _BILLION = float(10**9)
+_MAX_MESSAGE_SIZE_GRPC_BUG = 4194304 - 48
 
 class NudnikConfiguration(dict):
     pass
@@ -63,7 +66,7 @@ def parse_args():
                         help='Send this extra data with every request')
     parser.add_argument('--workers', '-w',
                         type=int,
-                        help='Number of workers (Default: number of CPU cores)')
+                        help='Number of workers (Default: Count of CPU cores)')
     parser.add_argument('--streams', '-s',
                         type=int,
                         help='Number of streams (Default: 1)')
@@ -88,7 +91,7 @@ def parse_args():
                         action='append',
                         metavar=('load_type', 'load_value'),
                         dest='load',
-                        help='Add artificial load [rtt, rttr, cpu, mem] (Default: None)')
+                        help='Add artificial load [rtt, rttr, cpu, mem, cmd, fcmd] (Default: None)')
     parser.add_argument('--retry-count',
                         type=int,
                         help='Number of times to re-send failed messages (Default: -1, which means infinite times)')
@@ -109,6 +112,9 @@ def parse_args():
                         action='append',
                         choices=['stdout', 'file', 'influxdb'],
                         help='Enable metrics outputs (Default: None)')
+    parser.add_argument('--metrics-interval',
+                        type=int,
+                        help='Number of seconds per metrics cycle (Default: 1)')
     parser.add_argument('--file-path', '-F',
                         type=str,
                         help='Path to exported metrics file (Default: ./nudnikmetrics.out)')
@@ -158,6 +164,7 @@ def parse_config(args):
       'ruok_port': 80,
       'ruok_path': '/ruok',
       'metrics': [],
+      'metrics_interval': 1,
       'file_path': './nudnikmetrics.out',
       'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
       'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
@@ -166,8 +173,8 @@ def parse_config(args):
       'influxdb_host': '127.0.0.1:8086',
       'influxdb_database_name': 'nudnikmetrics',
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
-      'influxdb_format': 'status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
-      'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
+      'influxdb_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
+      'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
       'debug': False,
       'verbose': 0,
     }
@@ -241,24 +248,15 @@ def parse_config(args):
         for key in DEFAULTS:
             print('{} - {}'.format(key, getattr(cfg, key)))
 
-    _MAX_MESSAGE_SIZE_GRPC_BUG = 4194304 - 48
-    if cfg.meta is not None and cfg.meta != '' and cfg.meta[0] == '@':
-        cfg.meta_filepath = cfg.meta[1:]
-
-        try:
-            with open(cfg.meta_filepath, 'rb') as f:
-                cfg.meta = f.read(_MAX_MESSAGE_SIZE_GRPC_BUG)
-
-        except Exception as e:
-            print('Could not open meta file "{}", {}'.format(cfg.meta_filepath, str(e)))
-            cfg.meta = None
-            pass
-
     load_list = list()
     if cfg.load is not None:
         for load in cfg.load:
-            load = nudnik.entity_pb2.Load(load_type=load[0], value=load[1])
-            load_list.append(load)
+            try:
+                load = nudnik.entity_pb2.Load(load_type=load[0], value=load[1])
+                load_list.append(load)
+            except ValueError as e:
+                print('{} - "{}"'.format(e, load[0]))
+                sys.exit(1)
     cfg.load_list = load_list
     return cfg
 
@@ -289,12 +287,58 @@ def generate_load(logger, load):
         time_load = load.value
         logger.debug('CPU loading for {} seconds'.format(time_load))
         for i in range(0, os.sysconf('SC_NPROCESSORS_ONLN')):
-            cpu_load_thread = FakeLoadCpu(time_load).start()
+            load_thread = threading.Thread(target=generate_load_cpu, args=(time_load,));
+            load_thread.daemon = True
+            load_thread.start()
     elif load.load_type == 3:
         amount_in_mb = load.value
         logger.debug('Loading {} MB to RAM'.format(amount_in_mb))
-        mem_load_thread = FakeLoadMem(amount_in_mb)
-        mem_load_thread.start()
+        load_thread = threading.Thread(target=generate_load_mem, args=(amount_in_mb,));
+        load_thread.daemon = True
+        load_thread.start()
+    elif load.load_type == 4:
+        args = load.value
+        logger.debug('Executing process {}'.format(args.split()))
+        load_thread = threading.Thread(target=generate_load_cmd, args=(args,));
+        load_thread.daemon = True
+        load_thread.start()
+        load_thread.join()
+    elif load.load_type == 5:
+        args = load.value
+        logger.debug('Background executing process {}'.format(args.split()))
+        load_thread = threading.Thread(target=generate_load_cmd, args=(args,));
+        load_thread.daemon = True
+        load_thread.start()
+
+def generate_load_cpu(time_load):
+    started_at = time.time()
+    while ((time.time() - started_at) < int(time_load)):
+        pass
+
+def generate_load_mem(amount_in_mb):
+    urandom = os.urandom(int(amount_in_mb) * 1024 * 1024)
+
+def generate_load_cmd(args):
+    p = subprocess.Popen(args.split(),
+                         shell=False,
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE)
+
+    return p.communicate()
+
+def get_meta(cfg):
+
+    if cfg.meta is not None and cfg.meta != '':
+        if cfg.meta[0] == '@':
+            meta_filepath = cfg.meta[1:]
+            if meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
+                return os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
+            with open(cfg.meta[1:], 'rb') as f:
+                return f.read(_MAX_MESSAGE_SIZE_GRPC_BUG)
+        else:
+            return cfg.meta
+
+    return ""
 
 def time_ns():
     # Python < 3.7 doesn't support time.time_ns(), this function unifies metrics measurments

@@ -38,6 +38,9 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
         recieved_at = utils.time_ns()
 
+        if self.cfg.vvvvv:
+            self.log.debug(request)
+
         # Generate fake load for incoming request
         for load in self.cfg.load_list:
             utils.generate_load(self.log, load)

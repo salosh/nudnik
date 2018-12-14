@@ -82,10 +82,13 @@
 #   "rttr" - Add a random (between 0 and <value>) seconds sleeping time before replying (specify value, will be cast to float)
 #   "cpu"  - Add a CPU load for <value> amount of seconds (specify string, will be cast to float)
 #   "mem"  - Add a MEM load for <value> amount of MB to be loaded to memory (specify string, will be cast to int)
+#   "cmd"  - Execute the <value> command, wait for the process to finish (specify string, will be splitted by spaces)
+#   "fcmd" - Execute the <value> command in background, do not wait for the process to finish (specify string, will be splitted by spaces)
 #
 #load:
 #- ["rttr", "0.0030"]
 #- ["cpu", "1"]
+#- ["cmd", "logger hello from nudnik"]
 
 #
 # Send this extra string data with every request
@@ -124,6 +127,11 @@
 #metrics:
 
 #
+# Number of seconds per metrics cycle (Default: 1)
+#
+#metrics_interval: 1
+
+#
 # Path to exported metrics file
 #
 #file_path: "./nudnikmetrics.out"
@@ -152,11 +160,11 @@
 # The fields before the first space are used as tags, and the rest as values.
 # For further information, please refer to: https://docs.influxdata.com/influxdb/v1.7/write_protocols/line_protocol_tutorial/
 #
-#influxdb_format: "status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}"
+#influxdb_format: "status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}"
 #
 # Enables customization of the data that will be sent to InfluxDB on retransmitted messages
 #
-#influxdb_retransmit_format: "status={status_code},name={req.name},sid={req.sequence_id} mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}"
+#influxdb_retransmit_format: "status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}"
 
 #
 # Enable debug mode

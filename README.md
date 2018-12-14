@@ -95,7 +95,8 @@ usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--chaos CHAOS] [--load load_type load_value]
               [--retry-count RETRY_COUNT] [--fail-ratio FAIL_RATIO] [--ruok]
               [--ruok-port RUOK_PORT] [--ruok-path RUOK_PATH]
-              [--metrics {stdout,file,influxdb}] [--file-path FILE_PATH]
+              [--metrics {stdout,file,influxdb}]
+              [--metrics-interval METRICS_INTERVAL] [--file-path FILE_PATH]
               [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
               [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
               [--verbose] [--version]
@@ -114,7 +115,7 @@ optional arguments:
                         Fail request on name mismatch (default: None)
   --meta META, -M META  Send this extra data with every request
   --workers WORKERS, -w WORKERS
-                        Number of workers (Default: number of CPU cores)
+                        Number of workers (Default: Count of CPU cores)
   --streams STREAMS, -s STREAMS
                         Number of streams (Default: 1)
   --initial-stream-index INITIAL_STREAM_INDEX
@@ -131,8 +132,8 @@ optional arguments:
                         Compute statistical process level random crashes [0,
                         3600/interval] (Default: 0)
   --load load_type load_value, -l load_type load_value
-                        Add artificial load [rtt, rttr, cpu, mem] (Default:
-                        None)
+                        Add artificial load [rtt, rttr, cpu, mem, cmd, fcmd]
+                        (Default: None)
   --retry-count RETRY_COUNT
                         Number of times to re-send failed messages (Default:
                         -1, which means infinite times)
@@ -145,6 +146,8 @@ optional arguments:
                         "Are You OK?" HTTP/1.1 API path (Default: /ruok)
   --metrics {stdout,file,influxdb}, -m {stdout,file,influxdb}
                         Enable metrics outputs (Default: None)
+  --metrics-interval METRICS_INTERVAL
+                        Number of seconds per metrics cycle (Default: 1)
   --file-path FILE_PATH, -F FILE_PATH
                         Path to exported metrics file (Default:
                         ./nudnikmetrics.out)
