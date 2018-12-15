@@ -120,7 +120,13 @@ class MessageSender(threading.Thread):
         if self.cfg.vv:
             self.log.debug('MessageSender {} initiated'.format(self.name))
 
-        client = ParserClient(self.cfg.host, self.cfg.port)
+        client = None
+        while client is None:
+            try:
+                client = ParserClient(self.cfg.host, self.cfg.port)
+            except grpc._channel._Rendezvous as e:
+                self.log.warn('Reinitializing client due to {}'.format(e))
+                time.sleep(1)
 
         while not self.gtfo:
             request = self.queue.get()
@@ -139,7 +145,14 @@ class MessageSender(threading.Thread):
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 request.stime=utils.time_ns()
-                response = client.get_response_for_request(request)
+                try:
+                    response = client.get_response_for_request(request)
+                except grpc._channel._Rendezvous as e:
+                    resp = {'status_code': 500}
+                    response = nudnik.entity_pb2.Response(**resp)
+                    self.log.warn('Reinitializing client due to {}'.format(e))
+                    client = ParserClient(self.cfg.host, self.cfg.port)
+
                 recieved_at = utils.time_ns()
 
                 send_was_successful = ((response.status_code == 0) and (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio))
