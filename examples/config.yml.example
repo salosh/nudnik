@@ -122,7 +122,7 @@
 #ruok_path: "/ruok"
 
 #
-# Enable metrics outputs, choose from ['stdout', 'file', 'influxdb']
+# Enable metrics outputs, choose from ['stdout', 'file', 'influxdb', 'prometheus']
 #
 #metrics:
 
@@ -165,6 +165,26 @@
 # Enables customization of the data that will be sent to InfluxDB on retransmitted messages
 #
 #influxdb_retransmit_format: "status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}"
+
+#
+# Prometheus pushgateway protocol
+#
+#prometheus_protocol: "http"
+
+#
+# Prometheus pushgateway host:port
+#
+#prometheus_host: "127.0.0.1:9091"
+
+#
+# Enables customization of the data that will be sent to Prometheus,
+# For further information, please refer to: https://github.com/prometheus/pushgateway
+#
+#prometheus_format: "# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n"
+#
+# Enables customization of the data that will be sent to Prometheus on retransmitted messages
+#
+#prometheus_retransmit_format: "# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n"
 
 #
 # Enable debug mode
