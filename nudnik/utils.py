@@ -110,7 +110,7 @@ def parse_args():
     parser.add_argument('--metrics', '-m',
                         type=str,
                         action='append',
-                        choices=['stdout', 'file', 'influxdb'],
+                        choices=['stdout', 'file', 'influxdb', 'prometheus'],
                         help='Enable metrics outputs (Default: None)')
     parser.add_argument('--metrics-interval',
                         type=int,
@@ -175,6 +175,11 @@ def parse_config(args):
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
       'influxdb_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
       'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
+      'prometheus_protocol': 'http',
+      'prometheus_host': '127.0.0.1:9091',
+      'prometheus_url': '{prometheus_protocol}://{prometheus_host}/metrics/job/{job_name}/{label_name}/{label_value}',
+      'prometheus_format': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n',
+      'prometheus_retransmit_format': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n',
       'debug': False,
       'verbose': 0,
     }
@@ -228,6 +233,13 @@ def parse_config(args):
     cfg.influxdb_measurement_name = 'server' if cfg.server else 'client'
     cfg.influxdb_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_format)
     cfg.influxdb_retransmit_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_retransmit_format)
+
+    cfg.prometheus_job_name = 'server' if cfg.server else 'client'
+    cfg.prometheus_url = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
+                                                   prometheus_host=cfg.prometheus_host,
+                                                   job_name=cfg.prometheus_job_name,
+                                                   label_name='instance',
+                                                   label_value=os.uname()[1])
 
     cfg.cycle_per_hour = int( 3600 / cfg.interval )
 

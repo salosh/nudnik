@@ -74,6 +74,10 @@ class Metrics(threading.Thread):
                     thread = InfluxdbMetrics(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
+                if 'prometheus' in self.cfg.metrics:
+                    thread = PrometheusMetrics(self.log, self.cfg.prometheus_url, current_report, self.cfg.prometheus_format, self.cfg.prometheus_retransmit_format)
+                    thread.start()
+                    self.workers.append(thread)
 
                 for i in range(0, current_report_length):
                     if self.cfg.vvvvv:
@@ -178,6 +182,29 @@ def create_influxdb_database(self, log, protocol, host, database_name):
     else:
         log.error('Response to {}: "{}"'.format(query, res.text))
         raise RuntimeException(res.text)
+
+class PrometheusMetrics(threading.Thread):
+    def __init__(self, log, url, data, format, retransmit_format):
+        threading.Thread.__init__(self)
+        self.log = log
+        self.session = requests_unixsocket.Session()
+        self.url = url
+        self.data = data
+        self.format = format
+        self.retransmit_format = retransmit_format
+
+    def run(self):
+        session = requests_unixsocket.Session()
+        # TODO handle PUT
+        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
+            self.log.warn('Writing {} to Prometheus {}'.format(stat, self.url))
+            res = session.post(self.url, stat)
+            if res.status_code != 202:
+                self.log.error('Response: "{}"'.format(res.text))
+            return False
+
+        session.close()
+        return True
 
 class Stat(object):
     def __init__(self, request, response, recieved_at):
