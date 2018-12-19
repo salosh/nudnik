@@ -20,22 +20,22 @@ import requests_unixsocket
 
 import nudnik.utils as utils
 
-class Metrics(threading.Thread):
+class Stats(threading.Thread):
 
     def __init__(self, cfg):
         threading.Thread.__init__(self)
         self.gtfo = False
         self.lock = threading.Lock()
-        self.metrics = list()
+        self.stats = list()
         self.successful_requests = 0
         self.failed_requests = 0
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
 
-        if 'file' in self.cfg.metrics:
+        if 'file' in self.cfg.stats:
             self.file_path = cfg.file_path
-        if 'influxdb' in self.cfg.metrics:
+        if 'influxdb' in self.cfg.stats:
             if cfg.influxdb_protocol == 'http+unix':
                 self.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
             else:
@@ -46,43 +46,43 @@ class Metrics(threading.Thread):
                                                         influxdb_host=self.influxdb_host,
                                                         influxdb_database_name=cfg.influxdb_database_name)
 
-        self.log.debug('Metrics thread initiated')
+        self.log.debug('Stats thread initiated')
 
     def run(self):
         self.log.debug('Running {}'.format(self.name))
         while not self.gtfo:
             time_start = utils.time_ns()
 
-            current_report = list(self.metrics)
+            current_report = list(self.stats)
             current_report_length = len(current_report)
             if current_report_length > 0:
                 if self.cfg.vvv:
-                    self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
+                    self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.stats)))
 
                 if self.cfg.debug:
                     for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
                         self.log.debug(stat)
-                elif 'stdout' in self.cfg.metrics:
+                elif 'stdout' in self.cfg.stats:
                     for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
                         self.log.info(stat)
 
-                if 'file' in self.cfg.metrics:
-                    thread = FileMetrics(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
+                if 'file' in self.cfg.stats:
+                    thread = FileStats(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
-                if 'influxdb' in self.cfg.metrics:
-                    thread = InfluxdbMetrics(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
+                if 'influxdb' in self.cfg.stats:
+                    thread = InfluxdbStats(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
-                if 'prometheus' in self.cfg.metrics:
-                    thread = PrometheusMetrics(self.log, self.cfg.prometheus_url, current_report, self.cfg.prometheus_format, self.cfg.prometheus_retransmit_format)
+                if 'prometheus' in self.cfg.stats:
+                    thread = PrometheusStats(self.log, self.cfg.prometheus_url, current_report, self.cfg.prometheus_format, self.cfg.prometheus_retransmit_format)
                     thread.start()
                     self.workers.append(thread)
 
                 for i in range(0, current_report_length):
                     if self.cfg.vvvvv:
                         self.log.debug('Popping {}/{} items'.format(i, current_report_length))
-                    self.metrics.pop(0)
+                    self.stats.pop(0)
 
                 while len(self.workers) > 0:
                     for index, thread in enumerate(self.workers):
@@ -95,8 +95,8 @@ class Metrics(threading.Thread):
                 self.log.debug('Nothing to report')
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
-            if elapsed < self.cfg.metrics_interval:
-                time.sleep(self.cfg.metrics_interval - elapsed)
+            if elapsed < self.cfg.stats_interval:
+                time.sleep(self.cfg.stats_interval - elapsed)
 
     def add_success(self):
         with self.lock:
@@ -122,12 +122,12 @@ class Metrics(threading.Thread):
         return current_fail_ratio
 
     def append(self, stat):
-        self.metrics.append(stat)
+        self.stats.append(stat)
 
     def exit(self):
         self.gtfo = 1
 
-class FileMetrics(threading.Thread):
+class FileStats(threading.Thread):
     def __init__(self, log, path, data, format, retransmit_format):
         threading.Thread.__init__(self)
         self.log = log
@@ -141,12 +141,12 @@ class FileMetrics(threading.Thread):
         for stat in _parse_stats(self.data, self.format, self.retransmit_format):
             data.append(stat)
         self.log.debug('Writing {} items to {}'.format(len(data), self.path))
-        with open(self.path, 'a') as metricsfile:
-            metricsfile.write('\n'.join(data))
-            metricsfile.write('\n')
+        with open(self.path, 'a') as statsfile:
+            statsfile.write('\n'.join(data))
+            statsfile.write('\n')
         return True
 
-class InfluxdbMetrics(threading.Thread):
+class InfluxdbStats(threading.Thread):
     def __init__(self, log, url, data, format, retransmit_format):
         threading.Thread.__init__(self)
         self.log = log
@@ -183,7 +183,7 @@ def create_influxdb_database(self, log, protocol, host, database_name):
         log.error('Response to {}: "{}"'.format(query, res.text))
         raise RuntimeException(res.text)
 
-class PrometheusMetrics(threading.Thread):
+class PrometheusStats(threading.Thread):
     def __init__(self, log, url, data, format, retransmit_format):
         threading.Thread.__init__(self)
         self.log = log

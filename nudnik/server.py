@@ -28,11 +28,11 @@ _ONE_DAY_IN_SECONDS = 60 * 60 * 24
 
 class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
-    def __init__(self, cfg, metrics):
+    def __init__(self, cfg, stats):
         super(ParseService, self).__init__()
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
-        self.metrics = metrics
+        self.stats = stats
 
     def parse(self, request, context):
 
@@ -63,19 +63,19 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             if not request.name == self.cfg.name:
                 raise NameMismatchException('Client name "{}" must exactly match server name "{}"'.format(request.name, self.cfg.name))
 
-        if (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio):
-            self.metrics.add_success()
+        if (self.stats.get_fail_ratio() >= self.cfg.fail_ratio):
+            self.stats.add_success()
             status_code = 'OK'
         else:
-            self.metrics.add_failure()
+            self.stats.add_failure()
             status_code = 'SERVER_ERROR'
 
 
         response = {'status_code': status_code, 'ctime': recieved_at, 'stime': utils.time_ns()}
         grpc_response = nudnik.entity_pb2.Response(**response)
 
-        stat = nudnik.metrics.Stat(request, grpc_response, recieved_at)
-        self.metrics.append(stat)
+        stat = nudnik.stats.Stat(request, grpc_response, recieved_at)
+        self.stats.append(stat)
 
         if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
             chaos_exception = utils.ChaosException(self.cfg.chaos_string)
@@ -86,7 +86,7 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
     def start_server(self):
         parse_server = grpc.server(futures.ThreadPoolExecutor(max_workers=self.cfg.workers))
-        nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.metrics),parse_server)
+        nudnik.entity_pb2_grpc.add_ParserServicer_to_server(ParseService(self.cfg, self.stats),parse_server)
         bind_host = self.cfg.host if self.cfg.host != '0.0.0.0' else '[::]'
         parse_server.add_insecure_port('{}:{}'.format(bind_host, self.cfg.port))
         # Non blocking

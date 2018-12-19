@@ -17,7 +17,7 @@
 #
 import sys
 
-import nudnik.metrics
+import nudnik.stats
 import nudnik.server
 import nudnik.client
 import nudnik.utils as utils
@@ -37,13 +37,13 @@ def main():
         ruokthread.daemon = True
         ruokthread.start()
 
-    metricsthread = nudnik.metrics.Metrics(cfg)
-    metricsthread.daemon = True
-    metricsthread.start()
+    statsthread = nudnik.stats.Stats(cfg)
+    statsthread.daemon = True
+    statsthread.start()
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.server.ParseService(cfg, metricsthread)
+        server = nudnik.server.ParseService(cfg, statsthread)
         server.start_server()
 
     else:
@@ -53,7 +53,7 @@ def main():
         for i in range(0, cfg.streams):
             try:
                 stream_id = cfg.initial_stream_index + i
-                stream = nudnik.client.Stream(cfg, stream_id, metricsthread)
+                stream = nudnik.client.Stream(cfg, stream_id, statsthread)
                 streams.append(stream)
                 stream.start()
             except Exception as e:

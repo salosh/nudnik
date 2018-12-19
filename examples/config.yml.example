@@ -122,19 +122,19 @@
 #ruok_path: "/ruok"
 
 #
-# Enable metrics outputs, choose from ['stdout', 'file', 'influxdb', 'prometheus']
+# Enable stats outputs, choose from ['stdout', 'file', 'influxdb', 'prometheus']
 #
-#metrics:
+#stats:
 
 #
-# Number of seconds per metrics cycle (Default: 1)
+# Number of seconds per stats cycle (Default: 1)
 #
-#metrics_interval: 1
+#stats_interval: 1
 
 #
-# Path to exported metrics file
+# Path to exported stats file
 #
-#file_path: "./nudnikmetrics.out"
+#file_path: "./nudnikstats.out"
 
 #
 # Enables customization of the data that will be written to <file_path>
@@ -153,7 +153,7 @@
 #
 # InfluxDB database name                   
 #
-#influxdb_database_name: "nudnikmetrics"
+#influxdb_database_name: "nudnik"
 
 #
 # Enables customization of the data that will be sent to InfluxDB,

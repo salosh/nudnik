@@ -107,23 +107,23 @@ def parse_args():
     parser.add_argument('--ruok-path',
                         type=str,
                         help='"Are You OK?" HTTP/1.1 API path (Default: /ruok)')
-    parser.add_argument('--metrics', '-m',
+    parser.add_argument('--stats', '-m',
                         type=str,
                         action='append',
                         choices=['stdout', 'file', 'influxdb', 'prometheus'],
-                        help='Enable metrics outputs (Default: None)')
-    parser.add_argument('--metrics-interval',
+                        help='Enable stats outputs (Default: None)')
+    parser.add_argument('--stats-interval',
                         type=int,
-                        help='Number of seconds per metrics cycle (Default: 1)')
+                        help='Number of seconds per stats cycle (Default: 1)')
     parser.add_argument('--file-path', '-F',
                         type=str,
-                        help='Path to exported metrics file (Default: ./nudnikmetrics.out)')
+                        help='Path to exported stats file (Default: ./nudnikstats.out)')
     parser.add_argument('--influxdb-socket-path',
                         type=str,
                         help='Absolute path to InfluxDB Unix socket (Default: /var/run/influxdb/influxdb.sock)')
     parser.add_argument('--influxdb-database-name',
                         type=str,
-                        help='InfluxDB database name (Default: nudnikmetrics)')
+                        help='InfluxDB database name (Default: nudnik)')
     parser.add_argument('--debug', '-d',
                         action='store_true',
                         help='Debug mode (default: False)')
@@ -163,15 +163,15 @@ def parse_config(args):
       'ruok': False,
       'ruok_port': 80,
       'ruok_path': '/ruok',
-      'metrics': [],
-      'metrics_interval': 1,
-      'file_path': './nudnikmetrics.out',
+      'stats': [],
+      'stats_interval': 1,
+      'file_path': './nudnikstats.out',
       'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
       'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
       'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
       'influxdb_protocol': 'http+unix',
       'influxdb_host': '127.0.0.1:8086',
-      'influxdb_database_name': 'nudnikmetrics',
+      'influxdb_database_name': 'nudnik',
       'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
       'influxdb_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
       'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
@@ -353,7 +353,7 @@ def get_meta(cfg):
     return ""
 
 def time_ns():
-    # Python < 3.7 doesn't support time.time_ns(), this function unifies metrics measurments
+    # Python < 3.7 doesn't support time.time_ns(), this function unifies stats measurments
     return int(("%.9f" % time.time()).replace('.',''))
 
 def diff_nanoseconds(before, after):
