@@ -142,7 +142,7 @@ def parse_config(args):
     cfg = NudnikConfiguration()
 
     DEFAULTS = {
-      'config_file': 'config.yml',
+      'config_file': '/etc/nudnik/config.yml',
       'host': '127.0.0.1',
       'port': 5410,
       'server': False,
