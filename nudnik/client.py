@@ -46,25 +46,26 @@ class ParserClient(object):
         return self.stub.parse(request)
 
 class Stream(threading.Thread):
-    def __init__(self, cfg, stream_id, metrics):
+    def __init__(self, cfg, stream_id, stats):
         threading.Thread.__init__(self)
+        self.gtfo = False
+        self.event = threading.Event()
 
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
-        self.gtfo = False
         self.stream_id = stream_id
-        self.metrics = metrics
+        self.stats = stats
         self.queue = queue.Queue()
         self.name = '{}-{}'.format(cfg.name, stream_id)
         self.log.debug('Stream {} initiated'.format(self.name))
 
     def run(self):
-        self.log.debug('Stream {} started, sending {} messages per second'.format(self.name, (self.cfg.interval * self.cfg.rate)))
+        self.log.debug('Stream {} started, sending {} messages per second'.format(self.name, (self.cfg.rate / float(self.cfg.interval))))
 
         sequence_id = 0
 
         for worker_id in range(0, self.cfg.workers):
-            thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, self.queue, self.metrics)
+            thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, self.queue, self.stats)
             thread.daemon = True
             thread.start()
 
@@ -98,21 +99,22 @@ class Stream(threading.Thread):
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.interval:
-                time.sleep(self.cfg.interval - elapsed)
+                self.event.wait(timeout=(self.cfg.interval - elapsed))
 
     def exit(self):
         self.gtfo = 1
+        self.event.set()
 
 class MessageSender(threading.Thread):
 
-    def __init__(self, cfg, log, stream_id, worker_id, queue, metrics):
+    def __init__(self, cfg, log, stream_id, worker_id, queue, stats):
         threading.Thread.__init__(self)
         self.gtfo = False
 
         self.cfg = cfg
         self.log = log
         self.queue = queue
-        self.metrics = metrics
+        self.stats = stats
         self.worker_id = worker_id
         self.name = '{}-{}-{}'.format(cfg.name, stream_id, worker_id)
 
@@ -147,29 +149,31 @@ class MessageSender(threading.Thread):
                 request.stime=utils.time_ns()
                 try:
                     response = client.get_response_for_request(request)
+                    if self.cfg.vvvvv:
+                        self.log.debug(response)
                 except grpc._channel._Rendezvous as e:
                     resp = {'status_code': 500}
                     response = nudnik.entity_pb2.Response(**resp)
                     self.log.warn('Reinitializing client due to {}'.format(e))
                     client = ParserClient(self.cfg.host, self.cfg.port)
 
-                recieved_at = utils.time_ns()
+                timestamp = utils.time_ns()
 
-                send_was_successful = ((response.status_code == 0) and (self.metrics.get_fail_ratio() >= self.cfg.fail_ratio))
+                send_was_successful = ((response.status_code == 0) and (self.stats.get_fail_ratio() >= self.cfg.fail_ratio))
 
                 if send_was_successful:
-                    self.metrics.add_success()
-                    stat = nudnik.metrics.Stat(request, response, recieved_at)
-                    self.metrics.append(stat)
+                    self.stats.add_success()
+                    stat = nudnik.stats.Stat(request, response, timestamp)
+                    self.stats.append(stat)
                 else:
-                    self.metrics.add_failure()
+                    self.stats.add_failure()
                     try_count -= 1
                     retry_count += 1
                     request.rtime=utils.time_ns()
                     request.rcount = retry_count
 
             if self.cfg.vv:
-                total_rtt = utils.diff_seconds(request.ctime, recieved_at) * self.cfg.rate
+                total_rtt = utils.diff_seconds(request.ctime, timestamp) * self.cfg.rate
                 if total_rtt > self.cfg.interval:
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 

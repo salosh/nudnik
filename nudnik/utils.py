@@ -30,9 +30,64 @@ if sys.version_info < (3, 0):
     from exceptions import IOError as FileNotFoundError
 
 import nudnik
+from nudnik.entity_pb2 import Load
+import nudnik.outputs
 
 _BILLION = float(10**9)
-_MAX_MESSAGE_SIZE_GRPC_BUG = 4194304 - 48
+
+DEFAULTS = {
+    'config_file': '',
+    'host': '127.0.0.1',
+    'port': 5410,
+    'server': False,
+    'name': 'NAME',
+    'name_mismatch_error': None,
+    'meta': None,
+    'meta_size': (4194304 - 48),
+    'workers': os.sysconf('SC_NPROCESSORS_ONLN'),
+    'streams': 1,
+    'initial_stream_index': 0,
+    'interval': 1,
+    'rate': 1,
+    'count': 0,
+    'chaos': 0,
+    'chaos_string': 'In all chaos there is a cosmos, in all disorder a secret order. #Carl_Jung_FTW',
+    'load': [],
+    'retry_count': -1,
+    'fail_ratio': 0,
+    'ruok': False,
+    'ruok_port': 80,
+    'ruok_path': '/ruok',
+    'metrics': [],
+    'metrics_interval': 1,
+    'metrics_file_path': './nudnikmetrics.out',
+    'metrics_format_stdout': '{timestamp},{node.platform},{cpu.usage},{mem.percent}',
+    'metrics_format_file': '{timestamp},{node.platform},{cpu.usage},{mem.percent}',
+    'metrics_format_influxdb': 'cpu,hostname={node.nodename} {cpu._csv} {timestamp}\nmem,hostname={node.nodename} {mem._csv} {timestamp}\nnet,hostname={node.nodename} {net._csv} {timestamp}',
+    'metrics_format_prometheus': '# TYPE nudnik_metrics summary\nnudnik_metrics{{distro="{node.platform}",cpu_usage="{cpu.usage}", percent="{mem.percent}"}} {timestamp}\n',
+    'stats': [],
+    'stats_interval': 1,
+    'stats_file_path': './nudnikstats.out',
+    'stats_format_stdout': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
+    'stats_format_retransmit_stdout': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
+    'stats_format_file': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
+    'stats_format_retransmit_file': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
+    'stats_format_influxdb': '{mode},hostname={node.nodename},status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {timestamp}',
+    'stats_format_retransmit_influxdb': '{mode},hostname={node.nodename},status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {timestamp}',
+    'stats_format_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
+    'stats_format_retransmit_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
+    'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
+    'influxdb_protocol': 'http+unix',
+    'influxdb_host': '127.0.0.1:8086',
+    'influxdb_database_prefix': 'nudnik',
+    'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
+    'prometheus_protocol': 'http',
+    'prometheus_host': '127.0.0.1:9091',
+    'prometheus_url': '{prometheus_protocol}://{prometheus_host}/{type}/job/{job_name}/{label_name}/{label_value}',
+    'extra': [],
+    'debug': False,
+    'verbose': 0,
+}
 
 class NudnikConfiguration(dict):
     pass
@@ -101,29 +156,21 @@ def parse_args():
     parser.add_argument('--ruok', '-R',
                         action='store_true',
                         help='Enable "Are You OK?" HTTP/1.1 API (default: False)')
-    parser.add_argument('--ruok-port',
-                        type=int,
-                        help='"Are You OK?" HTTP/1.1 API port (default: 80)')
-    parser.add_argument('--ruok-path',
-                        type=str,
-                        help='"Are You OK?" HTTP/1.1 API path (Default: /ruok)')
     parser.add_argument('--metrics', '-m',
                         type=str,
                         action='append',
                         choices=['stdout', 'file', 'influxdb', 'prometheus'],
                         help='Enable metrics outputs (Default: None)')
-    parser.add_argument('--metrics-interval',
-                        type=int,
-                        help='Number of seconds per metrics cycle (Default: 1)')
-    parser.add_argument('--file-path', '-F',
+    parser.add_argument('--stats', '-t',
                         type=str,
-                        help='Path to exported metrics file (Default: ./nudnikmetrics.out)')
-    parser.add_argument('--influxdb-socket-path',
+                        action='append',
+                        choices=['stdout', 'file', 'influxdb', 'prometheus'],
+                        help='Enable stats outputs (Default: None)')
+    parser.add_argument('--extra', '-e',
                         type=str,
-                        help='Absolute path to InfluxDB Unix socket (Default: /var/run/influxdb/influxdb.sock)')
-    parser.add_argument('--influxdb-database-name',
-                        type=str,
-                        help='InfluxDB database name (Default: nudnikmetrics)')
+                        action='append',
+                        default=[],
+                        help='Extra args (Default: None)')
     parser.add_argument('--debug', '-d',
                         action='store_true',
                         help='Debug mode (default: False)')
@@ -141,105 +188,67 @@ def parse_args():
 def parse_config(args):
     cfg = NudnikConfiguration()
 
-    DEFAULTS = {
-      'config_file': 'config.yml',
-      'host': '127.0.0.1',
-      'port': 5410,
-      'server': False,
-      'name': 'NAME',
-      'name_mismatch_error': None,
-      'meta': None,
-      'workers': os.sysconf('SC_NPROCESSORS_ONLN'),
-      'streams': 1,
-      'initial_stream_index': 0,
-      'interval': 1,
-      'rate': 1,
-      'count': 0,
-      'chaos': 0,
-      'chaos_string': 'In all chaos there is a cosmos, in all disorder a secret order. #Carl_Jung_FTW',
-      'load': [],
-      'retry_count': -1,
-      'fail_ratio': 0,
-      'ruok': False,
-      'ruok_port': 80,
-      'ruok_path': '/ruok',
-      'metrics': [],
-      'metrics_interval': 1,
-      'file_path': './nudnikmetrics.out',
-      'out_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
-      'out_retransmit_format': '{recieved_at_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
-      'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
-      'influxdb_protocol': 'http+unix',
-      'influxdb_host': '127.0.0.1:8086',
-      'influxdb_database_name': 'nudnikmetrics',
-      'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
-      'influxdb_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {recieved_at}',
-      'influxdb_retransmit_format': 'status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {recieved_at}',
-      'prometheus_protocol': 'http',
-      'prometheus_host': '127.0.0.1:9091',
-      'prometheus_url': '{prometheus_protocol}://{prometheus_host}/metrics/job/{job_name}/{label_name}/{label_value}',
-      'prometheus_format': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n',
-      'prometheus_retransmit_format': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {recieved_at}\n',
-      'debug': False,
-      'verbose': 0,
-    }
-
     setattr(cfg, 'config_file', DEFAULTS['config_file'])
+
+    extra_args = dict()
+    for mkv in args.extra:
+        arg = mkv.split('=', 1)
+        extra_args[arg[0]] = arg[1]
 
     for key in DEFAULTS:
         env_key_name = 'NUDNIK_{key_name}'.format(key_name=key.upper())
         value = None
-        if key in args.__dict__ and vars(args)[key]:
+        if key in args.__dict__ and vars(args)[key] is not None:
             value = vars(args)[key]
+        elif key in extra_args and extra_args[key] is not None:
+            value = cast_arg_by_type(key, extra_args[key])
         elif env_key_name in os.environ:
-            value = os.environ[env_key_name]
-            if type(DEFAULTS[key]) is bool:
-                if value in [True, 'TRUE', 'True', 'true', 'YES', 'Yes', 'yes', '1', 1]:
-                    value = True
-                elif value in [False, 'FALSE', 'False', 'false', 'NO', 'No', 'no', '0', 0]:
-                    value = False
-            elif isinstance(DEFAULTS[key], int):
-                value = int(value)
-            elif isinstance(DEFAULTS[key], str):
-                value = str(value)
-            else:
-                value = value
+            value = cast_arg_by_type(key, os.environ[env_key_name])
 
         if value is not None:
             setattr(cfg, key, value)
 
-    try:
-        with open(cfg.config_file, 'r') as ymlfile:
-            ymlcfg = yaml.load(ymlfile)
-
-            if not isinstance(ymlcfg, dict):
-                raise FileNotFoundError
-
-            for confkey in DEFAULTS:
-                if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
-                    setattr(cfg, confkey, ymlcfg[confkey])
-
-    except yaml.parser.ParserError as e:
-        print('Nudnik Configuration error: {}'.format(e))
-        sys.exit(1)
-    except FileNotFoundError:
-        print('Configuration file "{}" was not found, ignoring.'.format(cfg.config_file))
-        pass
+    if cfg.config_file != '':
+        read_config_file(cfg.config_file, cfg, True)
+    else:
+        read_config_file('{}/.nudnikrc'.format(os.environ['HOME']), cfg, False)
+        read_config_file('/etc/nudnik/config.yml', cfg, False)
 
     for key in DEFAULTS:
         if getattr(cfg, key, None) is None:
             setattr(cfg, key, DEFAULTS[key])
 
-    cfg.influxdb_measurement_name = 'server' if cfg.server else 'client'
-    cfg.influxdb_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_format)
-    cfg.influxdb_retransmit_format = '{},hostname={},{}'.format(cfg.influxdb_measurement_name, os.uname()[1], cfg.influxdb_retransmit_format)
+    if 'influxdb' in cfg.stats or 'influxdb' in cfg.metrics:
+        if cfg.influxdb_protocol == 'http+unix':
+            cfg.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
 
-    cfg.prometheus_job_name = 'server' if cfg.server else 'client'
-    cfg.prometheus_url = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
-                                                   prometheus_host=cfg.prometheus_host,
-                                                   job_name=cfg.prometheus_job_name,
-                                                   label_name='instance',
-                                                   label_value=os.uname()[1])
+        database_name_stats = '{}stats'.format(cfg.influxdb_database_prefix)
+        database_name_metrics = '{}metrics'.format(cfg.influxdb_database_prefix)
+
+        cfg.influxdb_url_stats = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
+                                               influxdb_host=cfg.influxdb_host,
+                                               influxdb_database_name=database_name_stats)
+        cfg.influxdb_url_metrics = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
+                                               influxdb_host=cfg.influxdb_host,
+                                               influxdb_database_name=database_name_metrics)
+
+        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host, database_name_stats)
+        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host, database_name_metrics)
+
+    if 'prometheus' in cfg.stats or 'prometheus' in cfg.metrics:
+        cfg.prometheus_job_name = 'server' if cfg.server else 'client'
+        cfg.prometheus_url_stats = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
+                                                         prometheus_host=cfg.prometheus_host,
+                                                         type='stats',
+                                                         job_name=cfg.prometheus_job_name,
+                                                         label_name='instance',
+                                                         label_value=os.uname()[1])
+        cfg.prometheus_url_metrics = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
+                                                         prometheus_host=cfg.prometheus_host,
+                                                         type='metrics',
+                                                         job_name=cfg.prometheus_job_name,
+                                                         label_name='instance',
+                                                         label_value=os.uname()[1])
 
     cfg.cycle_per_hour = int( 3600 / cfg.interval )
 
@@ -264,7 +273,7 @@ def parse_config(args):
     if cfg.load is not None:
         for load in cfg.load:
             try:
-                load = nudnik.entity_pb2.Load(load_type=load[0], value=load[1])
+                load = Load(load_type=load[0], value=load[1])
                 load_list.append(load)
             except ValueError as e:
                 print('{} - "{}"'.format(e, load[0]))
@@ -285,6 +294,19 @@ def get_logger(debug=False):
       logger.setLevel(logging.INFO)
 
   return logger
+
+def cast_arg_by_type(key, value):
+    if type(DEFAULTS[key]) is bool:
+        if value in [True, 'TRUE', 'True', 'true', 'YES', 'Yes', 'yes', '1', 1]:
+            return True
+        elif value in [False, 'FALSE', 'False', 'false', 'NO', 'No', 'no', '0', 0]:
+            return False
+    elif isinstance(DEFAULTS[key], int):
+        return int(value)
+    elif isinstance(DEFAULTS[key], str):
+        return str(value)
+
+    return value
 
 def generate_load(logger, load):
     if load.load_type == 0:
@@ -324,7 +346,7 @@ def generate_load(logger, load):
 
 def generate_load_cpu(time_load):
     started_at = time.time()
-    while ((time.time() - started_at) < int(time_load)):
+    while ((time.time() - started_at) < float(time_load)):
         pass
 
 def generate_load_mem(amount_in_mb):
@@ -344,16 +366,16 @@ def get_meta(cfg):
         if cfg.meta[0] == '@':
             meta_filepath = cfg.meta[1:]
             if meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
-                return os.urandom(_MAX_MESSAGE_SIZE_GRPC_BUG)
+                return os.urandom(cfg.meta_size)
             with open(cfg.meta[1:], 'rb') as f:
-                return f.read(_MAX_MESSAGE_SIZE_GRPC_BUG)
+                return f.read(cfg.meta_size)
         else:
-            return cfg.meta
+            return cfg.meta.encode()
 
-    return ""
+    return ''.encode()
 
 def time_ns():
-    # Python < 3.7 doesn't support time.time_ns(), this function unifies metrics measurments
+    # Python < 3.7 doesn't support time.time_ns(), this function unifies stats measurments
     return int(("%.9f" % time.time()).replace('.',''))
 
 def diff_nanoseconds(before, after):
@@ -365,4 +387,47 @@ def diff_seconds(before, after):
 def time_to_date(timestamp):
     return datetime.fromtimestamp( timestamp / _BILLION )
 
+def read_config_file(config_file, cfg, fail_if_missing):
+    try:
+        with open(config_file, 'r') as ymlfile:
+            ymlcfg = yaml.load(ymlfile)
+
+            if not isinstance(ymlcfg, dict):
+                raise FileNotFoundError
+
+            for confkey in DEFAULTS:
+                if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
+                    setattr(cfg, confkey, ymlcfg[confkey])
+
+    except yaml.parser.ParserError as e:
+        print('Nudnik Configuration error: {}'.format(e))
+        sys.exit(1)
+    except FileNotFoundError as e:
+        print('Unable to read optional configuration file "{}"'.format(config_file))
+        if fail_if_missing:
+            raise e
+        else:
+            pass
+
 class ChaosException(Exception): pass
+
+class NudnikObject(object):
+
+    def __init__(self, timestamp=time_ns()):
+        self.timestamp = timestamp
+
+    @property
+    def _csv(self):
+        csv = []
+        for key in self.__dict__:
+            if not key.startswith('_'):
+                csv.append('{k}={v}'.format(k=key, v=getattr(self, key)))
+        return ','.join(csv)
+
+    @property
+    def _qcsv(self):
+        csv = []
+        for key in self.__dict__:
+            if not key.startswith('_'):
+                csv.append('{k}="{v}"'.format(k=key, v=getattr(self, key)))
+        return ','.join(csv)

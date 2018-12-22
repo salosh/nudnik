@@ -17,6 +17,7 @@
 #
 import sys
 
+import nudnik.stats
 import nudnik.metrics
 import nudnik.server
 import nudnik.client
@@ -32,42 +33,51 @@ def main():
     cfg = utils.parse_config(args)
     log = utils.get_logger(cfg.debug)
 
+    threads = list()
+
     if cfg.ruok is True:
         ruokthread = ruok.Ruok(cfg)
+        threads.append(ruokthread)
         ruokthread.daemon = True
         ruokthread.start()
 
-    metricsthread = nudnik.metrics.Metrics(cfg)
-    metricsthread.daemon = True
-    metricsthread.start()
+    if len(cfg.metrics) > 0:
+        metricsthread = nudnik.metrics.Metrics(cfg)
+        threads.append(metricsthread)
+        metricsthread.daemon = True
+        metricsthread.start()
+
+    statsthread = nudnik.stats.Stats(cfg)
+    threads.append(statsthread)
+    statsthread.daemon = True
+    statsthread.start()
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.server.ParseService(cfg, metricsthread)
+        server = nudnik.server.ParseService(cfg, statsthread)
         server.start_server()
 
     else:
         log.debug('Running Nudnik in client mode')
         log.debug('Starting {} streams'.format(cfg.streams))
-        streams = list()
         for i in range(0, cfg.streams):
             try:
                 stream_id = cfg.initial_stream_index + i
-                stream = nudnik.client.Stream(cfg, stream_id, metricsthread)
-                streams.append(stream)
+                stream = nudnik.client.Stream(cfg, stream_id, statsthread)
+                threads.append(stream)
                 stream.start()
             except Exception as e:
                 log.fatal('Fatal error during stream initialization: {}'.format(e))
 
         try:
-            while len(streams) > 0:
-                for index, stream in enumerate(streams):
+            while len(threads) > 0:
+                for index, stream in enumerate(threads):
                     if stream.gtfo or not stream.is_alive():
-                        streams.pop(index)
+                        threads.pop(index)
                     else:
                         stream.join(0.25)
         except KeyboardInterrupt:
-            for s in streams:
+            for s in threads:
                 s.exit()
 
     log.debug('You are the weakest link, goodbye!'.format(''))
