@@ -83,8 +83,11 @@ python -m grpc_tools.protoc --proto_path=./nudnik/ --python_out=./nudnik/ --grpc
 Configure
 --------
 
+[Configuration](/docs/configuration.md) documentation
+[Formatting](/docs/formatting.md) documentation
+
 ## Via `Nudnik` Command line args:
-```shell
+```sh
 nudnik -h
 usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--server] [--name NAME]
@@ -94,12 +97,9 @@ usage: nudnik [-h] [--config-file CONFIG_FILE] [--host HOST] [--port PORT]
               [--interval INTERVAL] [--rate RATE] [--count COUNT]
               [--chaos CHAOS] [--load load_type load_value]
               [--retry-count RETRY_COUNT] [--fail-ratio FAIL_RATIO] [--ruok]
-              [--ruok-port RUOK_PORT] [--ruok-path RUOK_PATH]
-              [--metrics {stdout,file,influxdb}]
-              [--metrics-interval METRICS_INTERVAL] [--file-path FILE_PATH]
-              [--influxdb-socket-path INFLUXDB_SOCKET_PATH]
-              [--influxdb-database-name INFLUXDB_DATABASE_NAME] [--debug]
-              [--verbose] [--version]
+              [--metrics {stdout,file,influxdb,prometheus}]
+              [--stats {stdout,file,influxdb,prometheus}] [--extra EXTRA]
+              [--debug] [--verbose] [--version]
 
 Nudnik - gRPC load tester
 
@@ -140,22 +140,12 @@ optional arguments:
   --fail-ratio FAIL_RATIO
                         Percent of requests to intentionally fail (Default: 0)
   --ruok, -R            Enable "Are You OK?" HTTP/1.1 API (default: False)
-  --ruok-port RUOK_PORT
-                        "Are You OK?" HTTP/1.1 API port (default: 80)
-  --ruok-path RUOK_PATH
-                        "Are You OK?" HTTP/1.1 API path (Default: /ruok)
-  --metrics {stdout,file,influxdb}, -m {stdout,file,influxdb}
+  --metrics {stdout,file,influxdb,prometheus}, -m {stdout,file,influxdb,prometheus}
                         Enable metrics outputs (Default: None)
-  --metrics-interval METRICS_INTERVAL
-                        Number of seconds per metrics cycle (Default: 1)
-  --file-path FILE_PATH, -F FILE_PATH
-                        Path to exported metrics file (Default:
-                        ./nudnikmetrics.out)
-  --influxdb-socket-path INFLUXDB_SOCKET_PATH
-                        Absolute path to InfluxDB Unix socket (Default:
-                        /var/run/influxdb/influxdb.sock)
-  --influxdb-database-name INFLUXDB_DATABASE_NAME
-                        InfluxDB database name (Default: nudnikmetrics)
+  --stats {stdout,file,influxdb,prometheus}, -t {stdout,file,influxdb,prometheus}
+                        Enable stats outputs (Default: None)
+  --extra EXTRA, -e EXTRA
+                        Extra args (Default: None)
   --debug, -d           Debug mode (default: False)
   --verbose, -v         Verbose mode, specify multiple times for extra
                         verbosity (default: None)
@@ -165,34 +155,12 @@ optional arguments:
 ```
 
 ## Via config file:
-```shell  
+```sh  
 nano ./config.yml     
 ```
 
- * Run example Server that fails `14%` of all incoming requests:
-```shell
-nudnik --server --fail-ratio 14
-```
-
- * Run a client that identifies itself as `foobar`, fork to `20` threads, each sending `5` gRPC messages every `3` seconds.
-```shell
-nudnik --name foobar --streams 20 --interval 3 --rate 5
-```
-
- * Run a client that identifies itself as `FakeFixedLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for `0.01` seconds before replying.
-```shell
-nudnik --name FakeFixedLatency --streams 3 --interval 10 --rate 1 --load rtt 0.01
-```
-
- * Run a client that identifies itself as `FakeRandomLatency`, fork to `3` threads, each sending `1` gRPC messages every `10` seconds, and also make the server wait for a random value between `0` and `0.5` seconds before replying. Export timing metrics to InfluxDB.
-```shell
-nudnik --name FakeRandomLatency --streams 3 --interval 10 --rate 1 --load rttr 0.5 --metrics influxdb
-```
-
- * Run a client that identifies itself as `FakeLatencyAndCPU`, fork to `1` threads, each sending `100` gRPC messages every `1` seconds, and also make the server wait for `2ms` and fake-load the CPU for `0.5` seconds before replying. Export timing metrics to a `output.csv`.
-```shell
-nudnik --name FakeLatencyAndCPU --streams 1 --interval 1 --rate 100 --load rtt 0.002 --load cpu 0.5 --metrics file --file-path ./output.csv
-```
+# Getting started
+Please refer to our [examples repository](https://github.com/salosh/nudnik-examples) for multiple guides and usage examples
 
 * * *
 Visit our website at https://salosh.org

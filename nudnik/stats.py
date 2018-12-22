@@ -14,17 +14,18 @@
 #    You should have received a copy of the GNU General Public License
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
-import time
 import threading
 import requests_unixsocket
 
 import nudnik.utils as utils
+import nudnik.outputs
 
 class Stats(threading.Thread):
 
     def __init__(self, cfg):
         threading.Thread.__init__(self)
         self.gtfo = False
+        self.event = threading.Event()
         self.lock = threading.Lock()
         self.stats = list()
         self.successful_requests = 0
@@ -32,19 +33,6 @@ class Stats(threading.Thread):
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
-
-        if 'file' in self.cfg.stats:
-            self.file_path = cfg.file_path
-        if 'influxdb' in self.cfg.stats:
-            if cfg.influxdb_protocol == 'http+unix':
-                self.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
-            else:
-                self.influxdb_host = cfg.influxdb_host
-
-            create_influxdb_database(self, self.log, cfg.influxdb_protocol, self.influxdb_host, cfg.influxdb_database_name)
-            self.influxdb_url = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
-                                                        influxdb_host=self.influxdb_host,
-                                                        influxdb_database_name=cfg.influxdb_database_name)
 
         self.log.debug('Stats thread initiated')
 
@@ -60,22 +48,22 @@ class Stats(threading.Thread):
                     self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.stats)))
 
                 if self.cfg.debug:
-                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
+                    for stat in _parse_stats(self.log, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
                         self.log.debug(stat)
                 elif 'stdout' in self.cfg.stats:
-                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
+                    for stat in _parse_stats(self.log, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
                         self.log.info(stat)
 
                 if 'file' in self.cfg.stats:
-                    thread = FileStats(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
+                    thread = FileStats(self.log, self.cfg.stats_file_path, current_report, self.cfg.stats_format_file, self.cfg.stats_format_retransmit_file)
                     thread.start()
                     self.workers.append(thread)
                 if 'influxdb' in self.cfg.stats:
-                    thread = InfluxdbStats(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
+                    thread = InfluxdbStats(self.log, self.cfg.influxdb_url_stats, current_report, self.cfg.stats_format_influxdb, self.cfg.stats_format_retransmit_influxdb)
                     thread.start()
                     self.workers.append(thread)
                 if 'prometheus' in self.cfg.stats:
-                    thread = PrometheusStats(self.log, self.cfg.prometheus_url, current_report, self.cfg.prometheus_format, self.cfg.prometheus_retransmit_format)
+                    thread = PrometheusStats(self.log, self.cfg.prometheus_url_stats, current_report, self.cfg.stats_format_prometheus, self.cfg.stats_format_retransmit_prometheus)
                     thread.start()
                     self.workers.append(thread)
 
@@ -96,7 +84,7 @@ class Stats(threading.Thread):
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.stats_interval:
-                time.sleep(self.cfg.stats_interval - elapsed)
+                self.event.wait(timeout=(self.cfg.stats_interval - elapsed))
 
     def add_success(self):
         with self.lock:
@@ -126,108 +114,62 @@ class Stats(threading.Thread):
 
     def exit(self):
         self.gtfo = 1
+        self.event.set()
 
-class FileStats(threading.Thread):
+class FileStats(nudnik.outputs.FileOutput):
     def __init__(self, log, path, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.path = path
-        self.data = data
-        self.format = format
+        super(FileStats, self).__init__(log, path, data, format)
         self.retransmit_format = retransmit_format
 
-    def run(self):
-        data = list()
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            data.append(stat)
-        self.log.debug('Writing {} items to {}'.format(len(data), self.path))
-        with open(self.path, 'a') as statsfile:
-            statsfile.write('\n'.join(data))
-            statsfile.write('\n')
-        return True
+    def parse(self):
+        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+            self.parsed_data.append(stat)
 
-class InfluxdbStats(threading.Thread):
+class InfluxdbStats(nudnik.outputs.FileOutput):
     def __init__(self, log, url, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.session = requests_unixsocket.Session()
-        self.url = url
-        self.data = data
-        self.format = format
+        super(FileStats, self).__init__(log, url, data, format)
         self.retransmit_format = retransmit_format
 
-    def run(self):
-        data = list()
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            data.append(stat)
+    def parse(self):
+        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+            self.parsed_data.append(stat)
 
-        self.log.debug('Writing {} items to InfluxDB'.format(len(data)))
-        session = requests_unixsocket.Session()
-        res = session.post(self.url, data='\n'.join(data))
-        session.close()
-        if res.status_code != 204:
-            self.log.error('Response: "{}"'.format(res.text))
-            return False
-        return True
-
-def create_influxdb_database(self, log, protocol, host, database_name):
-    # https://docs.influxdata.com/influxdb/v1.7/tools/api/
-    # https://docs.influxdata.com/influxdb/v1.7/query_language/database_management/#create-database
-    query ='q=CREATE DATABASE "{}"'.format(database_name)
-    session = requests_unixsocket.Session()
-    res = session.post('{}://{}/query?{}'.format(protocol, host, query))
-    session.close()
-    if res.status_code == 200:
-        log.debug('Response to {}: "{}"'.format(query, res.text))
-    else:
-        log.error('Response to {}: "{}"'.format(query, res.text))
-        raise RuntimeException(res.text)
-
-class PrometheusStats(threading.Thread):
+class PrometheusStats(nudnik.outputs.FileOutput):
     def __init__(self, log, url, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.session = requests_unixsocket.Session()
-        self.url = url
-        self.data = data
-        self.format = format
+        super(FileStats, self).__init__(log, url, data, format)
         self.retransmit_format = retransmit_format
 
-    def run(self):
-        session = requests_unixsocket.Session()
-        # TODO handle PUT
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            self.log.warn('Writing {} to Prometheus {}'.format(stat, self.url))
-            res = session.post(self.url, stat)
-            if res.status_code != 202:
-                self.log.error('Response: "{}"'.format(res.text))
-            return False
+    def parse(self):
+        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+            self.parsed_data.append(stat)
 
-        session.close()
-        return True
-
-class Stat(object):
-    def __init__(self, request, response, recieved_at):
+class Stat(utils.NudnikObject):
+    def __init__(self, request, response, timestamp):
+        super(Stat, self).__init__(timestamp)
         self.request = request
         self.response = response
-        self.recieved_at = recieved_at
 
-def _parse_stats(stats, format, retransmit_format):
+def _parse_stats(log, stats, format, retransmit_format):
     for stat in stats:
         if stat.request.rcount == 0:
             dataformat = format
         else:
             dataformat = retransmit_format
 
-        statstring = dataformat.format(recieved_at_str=str(stat.recieved_at),
-                                       recieved_at=stat.recieved_at,
-                                       status_code=stat.response.status_code,
-                                       req=stat.request,
-                                       cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
-                                       rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.request.stime),
-                                       sdelta=utils.diff_nanoseconds(stat.request.stime, stat.response.ctime),
-                                       pdelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.stime),
-                                       bdelta=utils.diff_nanoseconds(stat.response.stime, stat.recieved_at),
-                                       rtt=utils.diff_nanoseconds(stat.request.ctime, stat.recieved_at))
+        try:
+            statstring = dataformat.format(timestamp_str=str(stat.timestamp),
+                                           timestamp=stat.timestamp,
+                                           req=stat.request,
+                                           res=stat.response,
+                                           cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
+                                           rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.request.stime),
+                                           sdelta=utils.diff_nanoseconds(stat.request.stime, stat.response.ctime),
+                                           pdelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.stime),
+                                           bdelta=utils.diff_nanoseconds(stat.response.stime, stat.timestamp),
+                                           rtt=utils.diff_nanoseconds(stat.request.ctime, stat.timestamp))
+        except Exception as e:
+            log.fatal('Fatal error occured while parsing provided format"{}", {}'.format(dataformat, str(e)))
+            break
+
         yield statstring
 
