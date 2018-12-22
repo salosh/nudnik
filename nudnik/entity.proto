@@ -59,5 +59,6 @@ message Response {
   StatusCode status_code = 1;
   int64 ctime            = 2;
   int64 stime            = 3;
+  bytes  meta            = 4;
 }
 

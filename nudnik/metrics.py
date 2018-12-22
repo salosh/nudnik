@@ -14,220 +14,185 @@
 #    You should have received a copy of the GNU General Public License
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
-import time
+import os
+import sys
 import threading
-import requests_unixsocket
+import psutil
+import platform
 
 import nudnik.utils as utils
+import nudnik.outputs
 
 class Metrics(threading.Thread):
 
     def __init__(self, cfg):
         threading.Thread.__init__(self)
         self.gtfo = False
-        self.lock = threading.Lock()
-        self.metrics = list()
-        self.successful_requests = 0
-        self.failed_requests = 0
+        self.event = threading.Event()
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.workers = list()
-
-        if 'file' in self.cfg.metrics:
-            self.file_path = cfg.file_path
-        if 'influxdb' in self.cfg.metrics:
-            if cfg.influxdb_protocol == 'http+unix':
-                self.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
-            else:
-                self.influxdb_host = cfg.influxdb_host
-
-            create_influxdb_database(self, self.log, cfg.influxdb_protocol, self.influxdb_host, cfg.influxdb_database_name)
-            self.influxdb_url = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
-                                                        influxdb_host=self.influxdb_host,
-                                                        influxdb_database_name=cfg.influxdb_database_name)
-
+        self.node = MetricNode()
         self.log.debug('Metrics thread initiated')
 
     def run(self):
         self.log.debug('Running {}'.format(self.name))
+        mode = 'servermetrics' if self.cfg.server else 'clientmetrics'
+
         while not self.gtfo:
             time_start = utils.time_ns()
 
-            current_report = list(self.metrics)
-            current_report_length = len(current_report)
-            if current_report_length > 0:
-                if self.cfg.vvv:
-                    self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.metrics)))
+            metric = Metric(self.node)
 
-                if self.cfg.debug:
-                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
-                        self.log.debug(stat)
-                elif 'stdout' in self.cfg.metrics:
-                    for stat in _parse_stats(current_report, self.cfg.out_format, self.cfg.out_retransmit_format):
-                        self.log.info(stat)
+            if self.cfg.debug:
+                for strmetric in _parse_metrics(self.log, mode, [metric], self.cfg.metrics_format_stdout):
+                    self.log.debug(strmetric)
+            elif 'stdout' in self.cfg.metrics:
+                for strmetric in _parse_metrics(self.log, mode, [metric], self.cfg.metrics_format_stdout):
+                    self.log.info(strmetric)
 
-                if 'file' in self.cfg.metrics:
-                    thread = FileMetrics(self.log, self.file_path, current_report, self.cfg.out_format, self.cfg.out_retransmit_format)
-                    thread.start()
-                    self.workers.append(thread)
-                if 'influxdb' in self.cfg.metrics:
-                    thread = InfluxdbMetrics(self.log, self.influxdb_url, current_report, self.cfg.influxdb_format, self.cfg.influxdb_retransmit_format)
-                    thread.start()
-                    self.workers.append(thread)
-                if 'prometheus' in self.cfg.metrics:
-                    thread = PrometheusMetrics(self.log, self.cfg.prometheus_url, current_report, self.cfg.prometheus_format, self.cfg.prometheus_retransmit_format)
-                    thread.start()
-                    self.workers.append(thread)
+            if 'file' in self.cfg.metrics:
+                thread = MetricsFileOutput(self.log, self.cfg.metrics_file_path, mode, [metric], self.cfg.metrics_format_file)
+                thread.start()
+                self.workers.append(thread)
+            if 'influxdb' in self.cfg.metrics:
+                thread = MetricsInfluxdbOutput(self.log, self.cfg.influxdb_url_metrics, mode, [metric], self.cfg.metrics_format_influxdb)
+                thread.start()
+                self.workers.append(thread)
+            if 'prometheus' in self.cfg.metrics:
+                thread = MetricsPrometheusOutput(self.log, self.cfg.prometheus_url_metrics, mode, [metric], self.cfg.metrics_format_prometheus)
+                thread.start()
+                self.workers.append(thread)
 
-                for i in range(0, current_report_length):
-                    if self.cfg.vvvvv:
-                        self.log.debug('Popping {}/{} items'.format(i, current_report_length))
-                    self.metrics.pop(0)
-
-                while len(self.workers) > 0:
-                    for index, thread in enumerate(self.workers):
-                        if thread.is_alive():
-                            thread.join(0.25)
-                        else:
-                            self.workers.pop(index)
-
-            elif self.cfg.vvvv:
-                self.log.debug('Nothing to report')
+            while len(self.workers) > 0:
+                for index, thread in enumerate(self.workers):
+                    if thread.is_alive():
+                        thread.join(0.25)
+                    else:
+                        self.workers.pop(index)
 
             elapsed = utils.diff_seconds(time_start, utils.time_ns())
             if elapsed < self.cfg.metrics_interval:
-                time.sleep(self.cfg.metrics_interval - elapsed)
-
-    def add_success(self):
-        with self.lock:
-            self.successful_requests += 1
-
-    def add_failure(self):
-        with self.lock:
-            self.failed_requests += 1
-
-    def get_fail_ratio(self):
-        total = self.failed_requests + self.successful_requests
-        try:
-            current_fail_ratio = float((self.failed_requests / total) * 100)
-        except ZeroDivisionError:
-            current_fail_ratio = 100.0
-
-        if self.cfg.vvvvv:
-            logformat = 'failed={},success={},current_fail_ratio={},conf_fail_ratio={}'
-            self.log.debug(logformat.format(self.failed_requests,
-                                            self.successful_requests,
-                                            current_fail_ratio,
-                                            self.cfg.fail_ratio))
-        return current_fail_ratio
-
-    def append(self, stat):
-        self.metrics.append(stat)
+                self.event.wait(timeout=(self.cfg.metrics_interval - elapsed))
 
     def exit(self):
         self.gtfo = 1
+        self.event.set()
 
-class FileMetrics(threading.Thread):
-    def __init__(self, log, path, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.path = path
-        self.data = data
-        self.format = format
-        self.retransmit_format = retransmit_format
+class MetricNode(utils.NudnikObject):
 
-    def run(self):
-        data = list()
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            data.append(stat)
-        self.log.debug('Writing {} items to {}'.format(len(data), self.path))
-        with open(self.path, 'a') as metricsfile:
-            metricsfile.write('\n'.join(data))
-            metricsfile.write('\n')
-        return True
+    def __init__(self):
+        super(MetricNode, self).__init__()
+        self.sysname, self.nodename, self.release, self.version, self.machine = os.uname()
+        self.major, self.minor, self.micro, self.releaselevel, self.serial = sys.version_info
+        for index, v in enumerate(sys.version.split('\n')):
+            setattr(self, 'version_{index}'.format(index=index), v)
+        self.dist = ''.join(platform.dist())
+        self.distribution = ''.join(platform.linux_distribution())
+        self.platform = platform.platform()
 
-class InfluxdbMetrics(threading.Thread):
-    def __init__(self, log, url, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.session = requests_unixsocket.Session()
-        self.url = url
-        self.data = data
-        self.format = format
-        self.retransmit_format = retransmit_format
+class MetricCpu(utils.NudnikObject):
 
-    def run(self):
-        data = list()
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            data.append(stat)
+    def __init__(self):
+        super(MetricCpu, self).__init__()
+        self.count = psutil.cpu_count()
+        self.usage = psutil.cpu_percent(interval=None, percpu=False)
+        freq = psutil.cpu_freq()
+        # None on virtual machines
+        if freq is not None:
+            freq_dict = freq._asdict()
+            for key in freq_dict.keys():
+                setattr(self, 'freq_{key}'.format(key=key), freq_dict[key])
 
-        self.log.debug('Writing {} items to InfluxDB'.format(len(data)))
-        session = requests_unixsocket.Session()
-        res = session.post(self.url, data='\n'.join(data))
-        session.close()
-        if res.status_code != 204:
-            self.log.error('Response: "{}"'.format(res.text))
-            return False
-        return True
+        stats = psutil.cpu_stats()._asdict()
+        for key in stats.keys():
+            setattr(self, 'stats_{key}'.format(key=key), stats[key])
 
-def create_influxdb_database(self, log, protocol, host, database_name):
-    # https://docs.influxdata.com/influxdb/v1.7/tools/api/
-    # https://docs.influxdata.com/influxdb/v1.7/query_language/database_management/#create-database
-    query ='q=CREATE DATABASE "{}"'.format(database_name)
-    session = requests_unixsocket.Session()
-    res = session.post('{}://{}/query?{}'.format(protocol, host, query))
-    session.close()
-    if res.status_code == 200:
-        log.debug('Response to {}: "{}"'.format(query, res.text))
-    else:
-        log.error('Response to {}: "{}"'.format(query, res.text))
-        raise RuntimeException(res.text)
+        times = psutil.cpu_times()._asdict()
+        for key in times.keys():
+            setattr(self, '{key}'.format(key=key), times[key])
 
-class PrometheusMetrics(threading.Thread):
-    def __init__(self, log, url, data, format, retransmit_format):
-        threading.Thread.__init__(self)
-        self.log = log
-        self.session = requests_unixsocket.Session()
-        self.url = url
-        self.data = data
-        self.format = format
-        self.retransmit_format = retransmit_format
+        times_percent = psutil.cpu_times_percent(interval=None, percpu=False)._asdict()
+        for key in times_percent.keys():
+            setattr(self, '{key}_percent'.format(key=key), times_percent[key])
 
-    def run(self):
-        session = requests_unixsocket.Session()
-        # TODO handle PUT
-        for stat in _parse_stats(self.data, self.format, self.retransmit_format):
-            self.log.warn('Writing {} to Prometheus {}'.format(stat, self.url))
-            res = session.post(self.url, stat)
-            if res.status_code != 202:
-                self.log.error('Response: "{}"'.format(res.text))
-            return False
+class MetricMemory(utils.NudnikObject):
+    def __init__(self):
+        super(MetricMemory, self).__init__()
 
-        session.close()
-        return True
+        swap = psutil.swap_memory()._asdict()
+        for key in swap.keys():
+            setattr(self, 'swap_{key}'.format(key=key), swap[key])
 
-class Stat(object):
-    def __init__(self, request, response, recieved_at):
-        self.request = request
-        self.response = response
-        self.recieved_at = recieved_at
+        virtual = psutil.virtual_memory()._asdict()
+        for key in virtual.keys():
+            setattr(self, '{key}'.format(key=key), virtual[key])
 
-def _parse_stats(stats, format, retransmit_format):
-    for stat in stats:
-        if stat.request.rcount == 0:
-            dataformat = format
-        else:
-            dataformat = retransmit_format
+class MetricDisk(utils.NudnikObject):
+    def __init__(self):
+        super(MetricDisk, self).__init__()
+# Waiting for https://github.com/giampaolo/psutil/issues/1354
+        pass
 
-        statstring = dataformat.format(recieved_at_str=str(stat.recieved_at),
-                                       recieved_at=stat.recieved_at,
-                                       status_code=stat.response.status_code,
-                                       req=stat.request,
-                                       cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
-                                       rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.request.stime),
-                                       sdelta=utils.diff_nanoseconds(stat.request.stime, stat.response.ctime),
-                                       pdelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.stime),
-                                       bdelta=utils.diff_nanoseconds(stat.response.stime, stat.recieved_at),
-                                       rtt=utils.diff_nanoseconds(stat.request.ctime, stat.recieved_at))
-        yield statstring
+class MetricNet(utils.NudnikObject):
+    def __init__(self):
+        super(MetricNet, self).__init__()
+        net = psutil.net_io_counters(pernic=False, nowrap=True)._asdict()
+        for key in net.keys():
+            setattr(self, '{key}'.format(key=key), net[key])
+
+class Metric(utils.NudnikObject):
+    def __init__(self, node):
+        super(Metric, self).__init__(timestamp=utils.time_ns())
+        self.node = node
+        self.cpu = MetricCpu()
+        self.mem = MetricMemory()
+        self.disk = MetricDisk()
+        self.net = MetricNet()
+
+class MetricsFileOutput(nudnik.outputs.FileOutput):
+
+    def parse(self):
+        for stat in _parse_metrics(self.log, self.mode, self.data, self.format):
+            self.parsed_data.append(stat)
+
+class MetricsInfluxdbOutput(nudnik.outputs.InfluxdbOutput):
+
+    def parse(self):
+        for stat in _parse_metrics(self.log, self.mode, self.data, self.format):
+            self.parsed_data.append(stat)
+
+class MetricsPrometheusOutput(nudnik.outputs.InfluxdbOutput):
+
+    def parse(self):
+        for stat in _parse_metrics(self.log, self.mode, self.data, self.format):
+            self.parsed_data.append(stat)
+
+def _parse_metrics(log, mode, metrics, dataformat):
+    for metric in metrics:
+        try:
+            metricstring = dataformat.format(mode=mode,
+                                         timestamp=metric.timestamp,
+                                         node=metric.node,
+                                         cpu=metric.cpu,
+                                         mem=metric.mem,
+                                         disk=metric.disk,
+                                         net=metric.net)
+        except Exception as e:
+            log.fatal('Fatal error occured while parsing provided format: "{}", {}'.format(dataformat, e))
+            break
+
+        yield metricstring
+
+def _minus_h(b):
+    symbols = ('K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y', 'S')
+    prefix = {}
+    for i, s in enumerate(symbols):
+        prefix[s] = 1 << (i + 1) * 10
+    for s in reversed(symbols):
+        if b >= prefix[s]:
+            value = float(b) / prefix[s]
+            return '%.3f%s' % (value, s)
+    return '%.3fB' % (b)
+
 
