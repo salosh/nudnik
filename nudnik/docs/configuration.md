@@ -47,10 +47,12 @@ stats_format_prometheus | See [Formatting](/docs/formatting.md) documentation | 
 stats_format_retransmit_prometheus | See [Formatting](/docs/formatting.md) documentation | See [Formatting](/docs/formatting.md) documentation
 influxdb_socket_path | /var/run/influxdb/influxdb.sock | Specifies path to an InfluxDB socket for both `stats` and `metrics` backends if enabled 
 influxdb_protocol | http+unix | Specifies protocol to InfluxDB connection for both `stats` and `metrics` backends if enabled
-influxdb_host | 127.0.0.1:8086 | Specifies host:port to InfluxDB connection for both `stats` and `metrics` backends if enabled
+influxdb_host | 127.0.0.1 | Specifies host:port to InfluxDB connection for both `stats` and `metrics` backends if enabled
+influxdb_port | 8086 | Specifies host:port to InfluxDB connection for both `stats` and `metrics` backends if enabled
 influxdb_database_prefix | nudnik | Specifies database name prefix for InfluxDB backend, the final name would be concatenated with `stats` or `metrics` if enabled
 prometheus_protocol | http | Specifies protocol to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
-prometheus_host | 127.0.0.1:9091 | Specifies host:port to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
+prometheus_host | 127.0.0.1 | Specifies host to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
+prometheus_port | 9091 | Specifies port to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
 debug | False | Decreases log level to debug.
 verbose | 0 | Enables extra verbosity, via command line specify multiple time (<6) for extra verbosity (e.g. `nudnik -vvvvvv`), via config file or environment variable specify a number (e.g. `export NUDNIK_VERBOSE=6`)
 
