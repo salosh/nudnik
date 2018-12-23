@@ -65,7 +65,15 @@ class Stream(threading.Thread):
         sequence_id = 0
 
         for worker_id in range(0, self.cfg.workers):
-            thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, self.queue, self.stats)
+            client = None
+            while client is None:
+                try:
+                    client = ParserClient(self.cfg.host, self.cfg.port)
+                except grpc._channel._Rendezvous as e:
+                    self.log.warn('Reinitializing client due to {}'.format(e))
+                    time.sleep(1)
+
+            thread = MessageSender(self.cfg, self.log, client, self.stream_id, worker_id, self.queue, self.stats)
             thread.daemon = True
             thread.start()
 
@@ -107,12 +115,13 @@ class Stream(threading.Thread):
 
 class MessageSender(threading.Thread):
 
-    def __init__(self, cfg, log, stream_id, worker_id, queue, stats):
+    def __init__(self, cfg, log, client, stream_id, worker_id, queue, stats):
         threading.Thread.__init__(self)
         self.gtfo = False
 
         self.cfg = cfg
         self.log = log
+        self.client = client
         self.queue = queue
         self.stats = stats
         self.worker_id = worker_id
@@ -121,14 +130,6 @@ class MessageSender(threading.Thread):
     def run(self):
         if self.cfg.vv:
             self.log.debug('MessageSender {} initiated'.format(self.name))
-
-        client = None
-        while client is None:
-            try:
-                client = ParserClient(self.cfg.host, self.cfg.port)
-            except grpc._channel._Rendezvous as e:
-                self.log.warn('Reinitializing client due to {}'.format(e))
-                time.sleep(1)
 
         while not self.gtfo:
             request = self.queue.get()
@@ -148,14 +149,14 @@ class MessageSender(threading.Thread):
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 request.stime=utils.time_ns()
                 try:
-                    response = client.get_response_for_request(request)
+                    response = self.client.get_response_for_request(request)
                     if self.cfg.vvvvv:
                         self.log.debug(response)
                 except grpc._channel._Rendezvous as e:
                     resp = {'status_code': 500}
                     response = nudnik.entity_pb2.Response(**resp)
                     self.log.warn('Reinitializing client due to {}'.format(e))
-                    client = ParserClient(self.cfg.host, self.cfg.port)
+                    self.client = ParserClient(self.cfg.host, self.cfg.port)
 
                 timestamp = utils.time_ns()
 

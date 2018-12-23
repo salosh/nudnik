@@ -19,6 +19,7 @@ import requests_unixsocket
 
 import nudnik.utils as utils
 import nudnik.outputs
+import nudnik.metrics
 
 class Stats(threading.Thread):
 
@@ -38,6 +39,8 @@ class Stats(threading.Thread):
 
     def run(self):
         self.log.debug('Running {}'.format(self.name))
+        mode = 'serverstats' if self.cfg.server else 'clientstats'
+
         while not self.gtfo:
             time_start = utils.time_ns()
 
@@ -48,22 +51,22 @@ class Stats(threading.Thread):
                     self.log.debug('Reporting {}/{} items'.format(current_report_length, len(self.stats)))
 
                 if self.cfg.debug:
-                    for stat in _parse_stats(self.log, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
+                    for stat in _parse_stats(self.log, mode, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
                         self.log.debug(stat)
                 elif 'stdout' in self.cfg.stats:
-                    for stat in _parse_stats(self.log, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
+                    for stat in _parse_stats(self.log, mode, current_report, self.cfg.stats_format_stdout, self.cfg.stats_format_retransmit_stdout):
                         self.log.info(stat)
 
                 if 'file' in self.cfg.stats:
-                    thread = FileStats(self.log, self.cfg.stats_file_path, current_report, self.cfg.stats_format_file, self.cfg.stats_format_retransmit_file)
+                    thread = FileStats(self.log, self.cfg.stats_file_path, mode, current_report, self.cfg.stats_format_file, self.cfg.stats_format_retransmit_file)
                     thread.start()
                     self.workers.append(thread)
                 if 'influxdb' in self.cfg.stats:
-                    thread = InfluxdbStats(self.log, self.cfg.influxdb_url_stats, current_report, self.cfg.stats_format_influxdb, self.cfg.stats_format_retransmit_influxdb)
+                    thread = InfluxdbStats(self.log, self.cfg.influxdb_url_stats, mode, current_report, self.cfg.stats_format_influxdb, self.cfg.stats_format_retransmit_influxdb)
                     thread.start()
                     self.workers.append(thread)
                 if 'prometheus' in self.cfg.stats:
-                    thread = PrometheusStats(self.log, self.cfg.prometheus_url_stats, current_report, self.cfg.stats_format_prometheus, self.cfg.stats_format_retransmit_prometheus)
+                    thread = PrometheusStats(self.log, self.cfg.prometheus_url_stats, mode, current_report, self.cfg.stats_format_prometheus, self.cfg.stats_format_retransmit_prometheus)
                     thread.start()
                     self.workers.append(thread)
 
@@ -117,30 +120,30 @@ class Stats(threading.Thread):
         self.event.set()
 
 class FileStats(nudnik.outputs.FileOutput):
-    def __init__(self, log, path, data, format, retransmit_format):
-        super(FileStats, self).__init__(log, path, data, format)
+    def __init__(self, log, path, mode, data, format, retransmit_format):
+        super(FileStats, self).__init__(log, path, mode, data, format)
         self.retransmit_format = retransmit_format
 
     def parse(self):
-        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+        for stat in _parse_stats(self.log, self.mode, self.data, self.format, self.retransmit_format):
             self.parsed_data.append(stat)
 
-class InfluxdbStats(nudnik.outputs.FileOutput):
-    def __init__(self, log, url, data, format, retransmit_format):
-        super(FileStats, self).__init__(log, url, data, format)
+class InfluxdbStats(nudnik.outputs.InfluxdbOutput):
+    def __init__(self, log, url, mode, data, format, retransmit_format):
+        super(InfluxdbStats, self).__init__(log, url, mode, data, format)
         self.retransmit_format = retransmit_format
 
     def parse(self):
-        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+        for stat in _parse_stats(self.log, self.mode, self.data, self.format, self.retransmit_format):
             self.parsed_data.append(stat)
 
-class PrometheusStats(nudnik.outputs.FileOutput):
-    def __init__(self, log, url, data, format, retransmit_format):
-        super(FileStats, self).__init__(log, url, data, format)
+class PrometheusStats(nudnik.outputs.PrometheusOutput):
+    def __init__(self, log, url, mode, data, format, retransmit_format):
+        super(PrometheusStats, self).__init__(log, url, mode, data, format)
         self.retransmit_format = retransmit_format
 
     def parse(self):
-        for stat in _parse_stats(self.log, self.data, self.format, self.retransmit_format):
+        for stat in _parse_stats(self.log, self.mode, self.data, self.format, self.retransmit_format):
             self.parsed_data.append(stat)
 
 class Stat(utils.NudnikObject):
@@ -149,7 +152,7 @@ class Stat(utils.NudnikObject):
         self.request = request
         self.response = response
 
-def _parse_stats(log, stats, format, retransmit_format):
+def _parse_stats(log, mode, stats, format, retransmit_format):
     for stat in stats:
         if stat.request.rcount == 0:
             dataformat = format
@@ -159,6 +162,8 @@ def _parse_stats(log, stats, format, retransmit_format):
         try:
             statstring = dataformat.format(timestamp_str=str(stat.timestamp),
                                            timestamp=stat.timestamp,
+                                           mode=mode,
+                                           node=nudnik.metrics.MetricNode(),
                                            req=stat.request,
                                            res=stat.response,
                                            cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),

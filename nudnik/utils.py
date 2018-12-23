@@ -68,22 +68,24 @@ DEFAULTS = {
     'stats': [],
     'stats_interval': 1,
     'stats_file_path': './nudnikstats.out',
-    'stats_format_stdout': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
-    'stats_format_retransmit_stdout': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
-    'stats_format_file': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
-    'stats_format_retransmit_file': '{timestamp_str},{status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
-    'stats_format_influxdb': '{mode},hostname={node.nodename},status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {timestamp}',
-    'stats_format_retransmit_influxdb': '{mode},hostname={node.nodename},status={status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {timestamp}',
+    'stats_format_stdout': '{timestamp_str},{res.status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
+    'stats_format_retransmit_stdout': '{timestamp_str},{res.status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
+    'stats_format_file': '{timestamp_str},{res.status_code},{req.name},{req.message_id},{req.ctime},{cdelta},rtt={rtt}',
+    'stats_format_retransmit_file': '{timestamp_str},{res.status_code},{req.name},{req.message_id},{req.ctime},{req.rtime},{cdelta},{rdelta},{req.rcount},rtt={rtt}',
+    'stats_format_influxdb': '{mode},hostname={node.nodename},status={res.status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rtt={rtt} {timestamp}',
+    'stats_format_retransmit_influxdb': '{mode},hostname={node.nodename},status={res.status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {timestamp}',
     'stats_format_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
     'stats_format_retransmit_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
     'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
     'influxdb_protocol': 'http+unix',
-    'influxdb_host': '127.0.0.1:8086',
+    'influxdb_host': '127.0.0.1',
+    'influxdb_port': '8086',
     'influxdb_database_prefix': 'nudnik',
     'influxdb_url': '{influxdb_protocol}://{influxdb_host}/write?db={influxdb_database_name}&precision=ns',
     'prometheus_protocol': 'http',
-    'prometheus_host': '127.0.0.1:9091',
-    'prometheus_url': '{prometheus_protocol}://{prometheus_host}/{type}/job/{job_name}/{label_name}/{label_value}',
+    'prometheus_host': '127.0.0.1',
+    'prometheus_port': '9091',
+    'prometheus_url': '{prometheus_protocol}://{prometheus_host}:{prometheus_port}/{type}/job/{job_name}/{label_name}/{label_value}',
     'extra': [],
     'debug': False,
     'verbose': 0,
@@ -220,31 +222,35 @@ def parse_config(args):
 
     if 'influxdb' in cfg.stats or 'influxdb' in cfg.metrics:
         if cfg.influxdb_protocol == 'http+unix':
-            cfg.influxdb_host = cfg.influxdb_socket_path.replace('/', '%2F')
+            cfg.influxdb_host_port = cfg.influxdb_socket_path.replace('/', '%2F')
+        else:
+            cfg.influxdb_host_port = '{}:{}'.format(cfg.influxdb_host, cfg.influxdb_port)
 
         database_name_stats = '{}stats'.format(cfg.influxdb_database_prefix)
         database_name_metrics = '{}metrics'.format(cfg.influxdb_database_prefix)
 
         cfg.influxdb_url_stats = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
-                                               influxdb_host=cfg.influxdb_host,
+                                               influxdb_host=cfg.influxdb_host_port,
                                                influxdb_database_name=database_name_stats)
         cfg.influxdb_url_metrics = cfg.influxdb_url.format(influxdb_protocol=cfg.influxdb_protocol,
-                                               influxdb_host=cfg.influxdb_host,
+                                               influxdb_host=cfg.influxdb_host_port,
                                                influxdb_database_name=database_name_metrics)
 
-        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host, database_name_stats)
-        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host, database_name_metrics)
+        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host_port, database_name_stats)
+        nudnik.outputs.create_influxdb_database(cfg.influxdb_protocol, cfg.influxdb_host_port, database_name_metrics)
 
     if 'prometheus' in cfg.stats or 'prometheus' in cfg.metrics:
         cfg.prometheus_job_name = 'server' if cfg.server else 'client'
         cfg.prometheus_url_stats = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
                                                          prometheus_host=cfg.prometheus_host,
+                                                         prometheus_port=cfg.prometheus_port,
                                                          type='stats',
                                                          job_name=cfg.prometheus_job_name,
                                                          label_name='instance',
                                                          label_value=os.uname()[1])
         cfg.prometheus_url_metrics = cfg.prometheus_url.format(prometheus_protocol=cfg.prometheus_protocol,
                                                          prometheus_host=cfg.prometheus_host,
+                                                         prometheus_port=cfg.prometheus_port,
                                                          type='metrics',
                                                          job_name=cfg.prometheus_job_name,
                                                          label_name='instance',

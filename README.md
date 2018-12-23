@@ -83,8 +83,9 @@ python -m grpc_tools.protoc --proto_path=./nudnik/ --python_out=./nudnik/ --grpc
 Configure
 --------
 
-[Configuration](/docs/configuration.md) documentation
-[Formatting](/docs/formatting.md) documentation
+[Configuration](/nudnik/docs/configuration.md) documentation
+
+[Formatting](/nudnik/docs/formatting.md) documentation
 
 ## Via `Nudnik` Command line args:
 ```sh
