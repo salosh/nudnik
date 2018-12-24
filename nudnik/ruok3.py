@@ -29,7 +29,7 @@ class Ruok(threading.Thread):
 
         self.Handler = NudnikHttpRequestHandler
         setattr(self.Handler, 'cfg', cfg)
-        server_address = ('0.0.0.0', cfg.ruok_port)
+        server_address = (cfg.ruok_host, cfg.ruok_port)
         self.httpd = socketserver.TCPServer(server_address, self.Handler)
 
     def run(self):
@@ -58,6 +58,18 @@ class NudnikHttpRequestHandler(http.server.BaseHTTPRequestHandler):
 
             response = {'status_code': 200, 'timestamp': str(datetime.utcnow()) }
             self.wfile.write(bytes(str(response), 'utf-8'))
+        elif self.path == '/config':
+            self.protocol_version='HTTP/1.1'
+            self.send_response(200, 'OK')
+            if 'Accept' in self.headers and self.headers['Accept'] == 'application/x-yaml':
+                self.send_header('Content-type', 'application/x-yaml')
+                response = self.cfg.yaml()
+            else:
+                self.send_header('Content-type', 'application/json')
+                response = self.cfg.json()
+
+            self.end_headers()
+            self.wfile.write(response.encode('utf-8'))
         else:
             self.protocol_version='HTTP/1.1'
             self.send_response(404)

@@ -17,6 +17,7 @@
 import logging
 import argparse
 import yaml
+import json
 import os
 import sys
 import threading
@@ -56,7 +57,8 @@ DEFAULTS = {
     'retry_count': -1,
     'fail_ratio': 0,
     'ruok': False,
-    'ruok_port': 80,
+    'ruok_host': '127.0.0.1',
+    'ruok_port': 5310,
     'ruok_path': '/ruok',
     'metrics': [],
     'metrics_interval': 1,
@@ -91,8 +93,68 @@ DEFAULTS = {
     'verbose': 0,
 }
 
-class NudnikConfiguration(dict):
-    pass
+class NudnikConfiguration(object):
+
+    def __init__(self):
+        self._fields = list()
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def set(self, key, value):
+        setattr(self, key, value)
+
+    def __iter__(self):
+        i = 0
+        while i < len(self._fields):
+            yield self[i]
+            i += 1
+
+    def __len__(self):
+        return len(self._fields)
+
+    def __getitem__(self, index):
+        return self._fields[index]
+
+    def __setitem__(self, key, value):
+        self.set(key, value)
+
+    def __setattr__(self, key, value):
+        super(NudnikConfiguration, self).__setattr__(key, value)
+        if not key.startswith('_'):
+            self._fields.append(key)
+
+    def dict(self):
+        d = dict()
+        for k in self:
+            d.update({k: self.get(k)})
+        return d
+
+    def json(self):
+        return json.dumps(self.dict())
+
+    def yaml(self):
+        return yaml.dump(self.dict())
+
+    def read_config_file(self, file_path, fail_if_missing):
+        try:
+            with open(file_path, 'r') as ymlfile:
+                ymlcfg = yaml.load(ymlfile)
+
+                if not isinstance(ymlcfg, dict):
+                    raise FileNotFoundError
+
+                for confkey in DEFAULTS:
+                    if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
+                        self.set(confkey, ymlcfg[confkey])
+
+        except yaml.parser.ParserError as e:
+            print('Nudnik Configuration error: {}'.format(e))
+            sys.exit(1)
+        except FileNotFoundError as e:
+            print('Unable to read optional configuration file "{}"'.format(file_path))
+            if fail_if_missing:
+                raise e
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -190,7 +252,7 @@ def parse_args():
 def parse_config(args):
     cfg = NudnikConfiguration()
 
-    setattr(cfg, 'config_file', DEFAULTS['config_file'])
+    cfg.config_file = DEFAULTS['config_file']
 
     extra_args = dict()
     for mkv in args.extra:
@@ -208,17 +270,17 @@ def parse_config(args):
             value = cast_arg_by_type(key, os.environ[env_key_name])
 
         if value is not None:
-            setattr(cfg, key, value)
+            cfg.set(key, value)
 
     if cfg.config_file != '':
-        read_config_file(cfg.config_file, cfg, True)
+        cfg.read_config_file(cfg.config_file, True)
     else:
-        read_config_file('{}/.nudnikrc'.format(os.environ['HOME']), cfg, False)
-        read_config_file('/etc/nudnik/config.yml', cfg, False)
+        cfg.read_config_file('{}/.nudnikrc'.format(os.environ['HOME']), False)
+        cfg.read_config_file('/etc/nudnik/config.yml', False)
 
     for key in DEFAULTS:
-        if getattr(cfg, key, None) is None:
-            setattr(cfg, key, DEFAULTS[key])
+        if cfg.get(key) is None:
+            cfg.set(key, DEFAULTS[key])
 
     if 'influxdb' in cfg.stats or 'influxdb' in cfg.metrics:
         if cfg.influxdb_protocol == 'http+unix':
@@ -264,7 +326,7 @@ def parse_config(args):
 
     for i in range(1, 6):
         attr = 'v'*i
-        setattr(cfg, attr, cfg.verbose >= i)
+        cfg.set(attr, cfg.verbose >= i)
 
     if cfg.v:
         cfg.debug = True
@@ -392,28 +454,6 @@ def diff_seconds(before, after):
 
 def time_to_date(timestamp):
     return datetime.fromtimestamp( timestamp / _BILLION )
-
-def read_config_file(config_file, cfg, fail_if_missing):
-    try:
-        with open(config_file, 'r') as ymlfile:
-            ymlcfg = yaml.load(ymlfile)
-
-            if not isinstance(ymlcfg, dict):
-                raise FileNotFoundError
-
-            for confkey in DEFAULTS:
-                if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
-                    setattr(cfg, confkey, ymlcfg[confkey])
-
-    except yaml.parser.ParserError as e:
-        print('Nudnik Configuration error: {}'.format(e))
-        sys.exit(1)
-    except FileNotFoundError as e:
-        print('Unable to read optional configuration file "{}"'.format(config_file))
-        if fail_if_missing:
-            raise e
-        else:
-            pass
 
 class ChaosException(Exception): pass
 
