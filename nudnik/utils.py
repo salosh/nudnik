@@ -146,7 +146,8 @@ class NudnikConfiguration(object):
 
                 for confkey in DEFAULTS:
                     if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(self, confkey, None) is None:
-                        self.set(confkey, ymlcfg[confkey])
+                        value = cast_arg_by_type(confkey, ymlcfg[confkey])
+                        self.set(confkey, value)
 
         except yaml.parser.ParserError as e:
             print('Nudnik Configuration error: {}'.format(e))
@@ -172,6 +173,7 @@ def parse_args():
                         help='port')
     parser.add_argument('--server', '-S',
                         action='store_true',
+                        default=None,
                         help='Operation mode (default: client)')
     parser.add_argument('--name', '-n',
                         type=str,
@@ -219,6 +221,7 @@ def parse_args():
                         help='Percent of requests to intentionally fail (Default: 0)')
     parser.add_argument('--ruok', '-R',
                         action='store_true',
+                        default=None,
                         help='Enable "Are You OK?" HTTP/1.1 API (default: False)')
     parser.add_argument('--metrics', '-m',
                         type=str,
@@ -237,6 +240,7 @@ def parse_args():
                         help='Extra args (Default: None)')
     parser.add_argument('--debug', '-d',
                         action='store_true',
+                        default=None,
                         help='Debug mode (default: False)')
     parser.add_argument('--verbose', '-v',
                         action='count',
