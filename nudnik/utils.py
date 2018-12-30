@@ -210,7 +210,7 @@ def parse_args():
                         action='append',
                         metavar=('load_type', 'load_value'),
                         dest='load',
-                        help='Add artificial load [rtt, rttr, cpu, mem, cmd, fcmd] (Default: None)')
+                        help='Add artificial load [rtt, rttr, cpu, mem, bcmd, fcmd] (Default: None)')
     parser.add_argument('--retry-count',
                         type=int,
                         help='Number of times to re-send failed messages (Default: -1, which means infinite times)')
@@ -376,7 +376,7 @@ def cast_arg_by_type(key, value):
 
     return value
 
-def generate_load(logger, load):
+def generate_load(logger, load, meta):
     if load.load_type == 0:
         time_sleep = float(load.value)
         logger.debug('Sleeping for {}'.format(time_sleep))
@@ -398,19 +398,17 @@ def generate_load(logger, load):
         load_thread = threading.Thread(target=generate_load_mem, args=(amount_in_mb,));
         load_thread.daemon = True
         load_thread.start()
-    elif load.load_type == 4:
-        args = load.value
+    elif load.load_type in [4, 5]:
+        if load.value == 'meta':
+            args = str(meta)
+        else:
+            args = load.value
         logger.debug('Executing process {}'.format(args.split()))
         load_thread = threading.Thread(target=generate_load_cmd, args=(args,));
         load_thread.daemon = True
         load_thread.start()
-        load_thread.join()
-    elif load.load_type == 5:
-        args = load.value
-        logger.debug('Background executing process {}'.format(args.split()))
-        load_thread = threading.Thread(target=generate_load_cmd, args=(args,));
-        load_thread.daemon = True
-        load_thread.start()
+        if load.load_type == 5:
+            load_thread.join()
 
 def generate_load_cpu(time_load):
     started_at = time.time()
@@ -428,17 +426,17 @@ def generate_load_cmd(args):
 
     return p.communicate()
 
-def get_meta(cfg):
+def get_meta(meta, size=0):
 
-    if cfg.meta is not None and cfg.meta != '':
-        if cfg.meta[0] == '@':
-            meta_filepath = cfg.meta[1:]
+    if meta is not None and meta != '':
+        if meta[0] == '@':
+            meta_filepath = meta[1:]
             if meta_filepath in ['random', 'urandom', '/dev/random', '/dev/urandom']:
-                return os.urandom(cfg.meta_size)
-            with open(cfg.meta[1:], 'rb') as f:
-                return f.read(cfg.meta_size)
+                return os.urandom(size)
+            with open(meta[1:], 'rb') as f:
+                return f.read(size)
         else:
-            return cfg.meta.encode()
+            return meta.encode()
 
     return ''.encode()
 

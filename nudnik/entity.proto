@@ -29,7 +29,7 @@ message Load {
     rttr = 1;
     cpu  = 2;
     mem  = 3;
-    cmd  = 4;
+    bcmd = 4;
     fcmd = 5;
   }
   LoadType load_type = 1;
@@ -58,7 +58,8 @@ message Response {
   }
   StatusCode status_code = 1;
   int64 ctime            = 2;
-  int64 stime            = 3;
-  bytes  meta            = 4;
+  int64 ltime            = 3;
+  int64 stime            = 4;
+  bytes  meta            = 5;
 }
 

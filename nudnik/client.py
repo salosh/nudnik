@@ -138,17 +138,19 @@ class MessageSender(threading.Thread):
             if self.cfg.vvvvv:
                 self.log.debug('Handling message_id {}'.format(request.message_id))
 
-            request.meta = utils.get_meta(self.cfg)
-
-            for load in request.load:
-                utils.generate_load(self.log, load)
-
             retry_count = 0
             try_count = 1 + self.cfg.retry_count
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 request.stime=utils.time_ns()
                 try:
+
+                    meta = self.cfg.meta.format(req=request, node=nudnik.metrics.MetricNode()) if self.cfg.meta is not None else None
+                    request.meta = utils.get_meta(meta, self.cfg.meta_size)
+
+                    for load in request.load:
+                        utils.generate_load(self.log, load, meta)
+
                     response = self.client.get_response_for_request(request)
                     if self.cfg.vvvvv:
                         self.log.debug(response)

@@ -169,7 +169,8 @@ def _parse_stats(log, mode, stats, format, retransmit_format):
                                            cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
                                            rdelta=utils.diff_nanoseconds(stat.request.rtime, stat.request.stime),
                                            sdelta=utils.diff_nanoseconds(stat.request.stime, stat.response.ctime),
-                                           pdelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.stime),
+                                           ldelta=utils.diff_nanoseconds(stat.response.ctime, stat.response.ltime),
+                                           pdelta=utils.diff_nanoseconds(stat.response.ltime, stat.response.stime),
                                            bdelta=utils.diff_nanoseconds(stat.response.stime, stat.timestamp),
                                            rtt=utils.diff_nanoseconds(stat.request.ctime, stat.timestamp))
         except Exception as e:
