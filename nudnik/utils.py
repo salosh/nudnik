@@ -145,7 +145,7 @@ class NudnikConfiguration(object):
                     raise FileNotFoundError
 
                 for confkey in DEFAULTS:
-                    if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(cfg, confkey, None) is None:
+                    if confkey in ymlcfg and ymlcfg[confkey] is not None and getattr(self, confkey, None) is None:
                         self.set(confkey, ymlcfg[confkey])
 
         except yaml.parser.ParserError as e:
