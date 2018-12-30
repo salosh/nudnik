@@ -27,10 +27,12 @@ Formatting the `stats` backend
 * res
   * status_code
   * ctime
+  * ltime
   * stime
 * cdelta
 * rdelta
 * sdelta
+* ldelta
 * pdelta
 * bdelta
 * rtt

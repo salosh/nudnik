@@ -44,7 +44,9 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
         # Generate fake load for incoming request
         for load in self.cfg.load_list:
-            utils.generate_load(self.log, load)
+            utils.generate_load(self.log, load, request.meta)
+
+        ltime = utils.time_ns()
 
         cdelta = utils.diff_nanoseconds(request.ctime, timestamp)
 
@@ -74,7 +76,7 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
             self.stats.add_failure()
             status_code = 'SERVER_ERROR'
 
-        response = {'status_code': status_code, 'ctime': timestamp, 'stime': utils.time_ns(), 'meta': utils.get_meta(self.cfg)}
+        response = {'status_code': status_code, 'ctime': timestamp, 'ltime': ltime, 'stime': utils.time_ns(), 'meta': utils.get_meta(self.cfg.meta, self.cfg.meta_size)}
         grpc_response = nudnik.entity_pb2.Response(**response)
 
         stat = nudnik.stats.Stat(request, grpc_response, timestamp)
