@@ -29,7 +29,7 @@ message Load {
     rttr = 1;
     cpu  = 2;
     mem  = 3;
-    cmd  = 4;
+    bcmd = 4;
     fcmd = 5;
   }
   LoadType load_type = 1;
