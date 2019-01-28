@@ -19,6 +19,7 @@ streams | 1 | On Client mode, specifies the number of streams that should send m
 initial_stream_index | 0 | In client mode, specifies the initial `stream_id` number, this value will be incremented by 1 for any additional stream 
 interval | 1 | In client mode, specifies the number of seconds for a message generation cycle, in server mode used for `chaos` calculations and reporting purposes
 rate | 1 | In client mode, specifies the numebr of messages that should be generated on every message generation cycle, in server mode used for `chaos` calculations and reporting purposes
+timeout | 1 | Maximum number of seconds before failing a request
 count | 0 | Specifies the number of messages that should be handeled before exiting, the default 0 value means unlimited messages
 chaos | 0 | Specifies a statistical number of times per hour that this node should fail and exit, In client mode checked on every `interval`, in server mode checked with every incoming message
 load | None | Specifies an artificial load that should be performed with every incoming / outgoing message, avilable values are {`rtt`, `rttr`, `cpu`, `mem`, `bcmd`, `fcmd`}
