@@ -40,6 +40,7 @@ DEFAULTS = {
     'config_file': '',
     'host': '127.0.0.1',
     'port': 5410,
+    'dns_ttl': 10,
     'server': False,
     'name': 'NAME',
     'name_mismatch_error': None,
@@ -172,6 +173,9 @@ def parse_args():
     parser.add_argument('--port', '-p',
                         type=int,
                         help='port')
+    parser.add_argument('--dns-ttl',
+                        type=int,
+                        help='Number of seconds before forcing "host" name lookup (Default: 10)')
     parser.add_argument('--server', '-S',
                         action='store_true',
                         default=None,
