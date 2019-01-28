@@ -50,6 +50,7 @@ DEFAULTS = {
     'initial_stream_index': 0,
     'interval': 1,
     'rate': 1,
+    'timeout': 1,
     'count': 0,
     'chaos': 0,
     'chaos_string': 'In all chaos there is a cosmos, in all disorder a secret order. #Carl_Jung_FTW',
@@ -160,7 +161,7 @@ class NudnikConfiguration(object):
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Nudnik - gRPC load tester',
-        epilog='2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'
+        epilog='2019 (C) Salo Shp <https://github.com/salosh/nudnik.git>'
     )
     parser.add_argument('--config-file', '-f',
                         type=str,
@@ -200,6 +201,9 @@ def parse_args():
     parser.add_argument('--rate', '-r',
                         type=int,
                         help='Number of messages per interval (Default: 10)')
+    parser.add_argument('--timeout',
+                        type=int,
+                        help='Maximum number of seconds before failing a request (Default: 1)')
     parser.add_argument('--count', '-C',
                         type=int,
                         help='Count of total messages that should be sent (Default: 0 == unlimited)')
@@ -247,7 +251,7 @@ def parse_args():
                         help='Verbose mode, specify multiple times for extra verbosity (default: None)')
     parser.add_argument('--version', '-V',
                         action='version',
-                        version='Nudnik v{} - 2018 (C) Salo Shp <https://github.com/salosh/nudnik.git>'.format(nudnik.__version__),
+                        version='Nudnik v{} - 2019 (C) Salo Shp <https://github.com/salosh/nudnik.git>'.format(nudnik.__version__),
                         help='Display Nudnik version')
 
     args = parser.parse_args()

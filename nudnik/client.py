@@ -30,7 +30,7 @@ import nudnik.utils as utils
 
 class ParserClient(object):
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, timeout):
         self.host = host
         self.port = port
 # TODO gRPC does not honor values bigger than 4194304
@@ -43,7 +43,7 @@ class ParserClient(object):
         self.stub = nudnik.entity_pb2_grpc.ParserStub(self.channel)
 
     def get_response_for_request(self, request):
-        return self.stub.parse(request)
+        return self.stub.parse(request, timeout=timeout)
 
 class Stream(threading.Thread):
     def __init__(self, cfg, stream_id, stats):
@@ -68,7 +68,7 @@ class Stream(threading.Thread):
             client = None
             while client is None:
                 try:
-                    client = ParserClient(self.cfg.host, self.cfg.port)
+                    client = ParserClient(self.cfg.host, self.cfg.port, self.cfg.timeout)
                 except grpc._channel._Rendezvous as e:
                     self.log.warn('Reinitializing client due to {}'.format(e))
                     time.sleep(1)
@@ -158,7 +158,7 @@ class MessageSender(threading.Thread):
                     resp = {'status_code': 500}
                     response = nudnik.entity_pb2.Response(**resp)
                     self.log.warn('Reinitializing client due to {}'.format(e))
-                    self.client = ParserClient(self.cfg.host, self.cfg.port)
+                    self.client = ParserClient(self.cfg.host, self.cfg.port, self.cfg.timeout)
 
                 timestamp = utils.time_ns()
 
