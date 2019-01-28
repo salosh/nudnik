@@ -131,8 +131,27 @@ class MetricMemory(utils.NudnikObject):
 class MetricDisk(utils.NudnikObject):
     def __init__(self):
         super(MetricDisk, self).__init__()
-# Waiting for https://github.com/giampaolo/psutil/issues/1354
-        pass
+
+        io = psutil.disk_io_counters(perdisk=True)
+
+        for p in psutil.disk_partitions(all=False):
+            dev = p.device.replace('/dev/', '')
+            entry = p._asdict()
+
+            usage = psutil.disk_usage(p.mountpoint)._asdict()
+            entry.update(usage)
+            for key in usage.keys():
+                if 'percent' not in key:
+                    entry[key + '_h'] = _minus_h(usage[key])
+
+            diskio = io[dev]._asdict()
+            entry.update(diskio)
+            for key in diskio.keys():
+                if '_bytes' in key:
+                    entry[key + '_h'] = _minus_h(diskio[key])
+
+            for key in entry:
+                setattr(self, '{device}_{key}'.format(device=dev, key=key), entry[key])
 
 class MetricNet(utils.NudnikObject):
     def __init__(self):
