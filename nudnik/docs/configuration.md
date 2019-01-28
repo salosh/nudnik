@@ -9,6 +9,7 @@ variable name | default | description
 config_file | None | Specify a profile configuration file path
 host | 127.0.0.1 | In server mode, controls the ip that should be binded, in client mode, specifies the server hostname or ip you wish to connect
 port | 5410 | In server mode, controls the port that should be binded, in client mode, specifies the server port you wish to connect
+dns_ttl | 10 | Number of seconds before forcing "host" name lookup
 server | False | If specified, initiate in `server` mode, otherwise default to `client` mode
 name | NAME | In server mode, used for reporting purposes and rejecting messages if `name_mismatch_error` is specified. In client mode, used for reporting purposes and for tagging outgoing messages using the `name` field.
 name_mismatch_error | None | Specifies incoming messages *rejection_by* filter for server mode, avilable values are {`prefix`, `suffix`, `exact`}
