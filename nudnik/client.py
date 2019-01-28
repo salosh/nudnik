@@ -22,6 +22,7 @@ if (sys.version_info >= (3, 0)):
 else:
     import Queue as queue
 import threading
+import socket
 
 import grpc
 
@@ -30,9 +31,11 @@ import nudnik.utils as utils
 
 class ParserClient(object):
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, timeout):
+        self.resolved_at = utils.time_ns()
         self.host = host
         self.port = port
+        self.timeout = timeout
 # TODO gRPC does not honor values bigger than 4194304
 #        max_message_size = (100 * 1024 * 1024)
 #        options=[('grpc.max_message_length', -1), ('grpc.max_recieve_message_length', -1), ('grpc.max_send_message_length', -1)]
@@ -43,7 +46,7 @@ class ParserClient(object):
         self.stub = nudnik.entity_pb2_grpc.ParserStub(self.channel)
 
     def get_response_for_request(self, request):
-        return self.stub.parse(request)
+        return self.stub.parse(request, timeout=self.timeout)
 
 class Stream(threading.Thread):
     def __init__(self, cfg, stream_id, stats):
@@ -64,18 +67,16 @@ class Stream(threading.Thread):
 
         sequence_id = 0
 
+        active_workers = threading.Semaphore(self.cfg.workers)
         for worker_id in range(0, self.cfg.workers):
-            client = None
-            while client is None:
-                try:
-                    client = ParserClient(self.cfg.host, self.cfg.port)
-                except grpc._channel._Rendezvous as e:
-                    self.log.warn('Reinitializing client due to {}'.format(e))
-                    time.sleep(1)
-
-            thread = MessageSender(self.cfg, self.log, client, self.stream_id, worker_id, self.queue, self.stats)
+            active_workers.acquire()
+            thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, active_workers, self.queue, self.stats)
             thread.daemon = True
             thread.start()
+
+        # Wait for all workers to initialize clients
+        for worker_id in range(0, self.cfg.workers):
+            active_workers.acquire()
 
         while not self.gtfo:
             time_start = utils.time_ns()
@@ -115,23 +116,31 @@ class Stream(threading.Thread):
 
 class MessageSender(threading.Thread):
 
-    def __init__(self, cfg, log, client, stream_id, worker_id, queue, stats):
+    def __init__(self, cfg, log, stream_id, worker_id, active_workers, queue, stats):
         threading.Thread.__init__(self)
         self.gtfo = False
-
+        self.event = threading.Event()
+        self.active_workers = active_workers
         self.cfg = cfg
         self.log = log
-        self.client = client
+        self.client = None
         self.queue = queue
         self.stats = stats
         self.worker_id = worker_id
         self.name = '{}-{}-{}'.format(cfg.name, stream_id, worker_id)
 
     def run(self):
+        self.get_client()
+        self.active_workers.release()
+
         if self.cfg.vv:
             self.log.debug('MessageSender {} initiated'.format(self.name))
 
         while not self.gtfo:
+            resolved_elapsed = utils.diff_seconds(self.client.resolved_at, utils.time_ns())
+            if resolved_elapsed > self.cfg.dns_ttl:
+                self.get_client()
+
             request = self.queue.get()
             request.worker_id = self.worker_id
 
@@ -158,7 +167,7 @@ class MessageSender(threading.Thread):
                     resp = {'status_code': 500}
                     response = nudnik.entity_pb2.Response(**resp)
                     self.log.warn('Reinitializing client due to {}'.format(e))
-                    self.client = ParserClient(self.cfg.host, self.cfg.port)
+                    self.get_client()
 
                 timestamp = utils.time_ns()
 
@@ -180,6 +189,37 @@ class MessageSender(threading.Thread):
                 if total_rtt > self.cfg.interval:
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 
+    def get_client(self, ipv4=True, ipv6=False):
+        if ipv6 is True:
+            if ipv4 is True:
+                family = 0
+            else:
+                family = 10
+        else:
+            family = 2
+
+        addresses = []
+        index = 0
+        while len(addresses) < 1:
+            addresses = socket.getaddrinfo(self.cfg.host, self.cfg.port, family, 1)
+            self.event.wait(timeout=((index * 100)/1000))
+            index += 1
+
+        host_address = addresses[random.randint(0, (len(addresses) - 1))][-1][0]
+        self.client = None
+        index = 0
+        while self.client is None:
+            try:
+                self.client = ParserClient(host_address, self.cfg.port, self.cfg.timeout)
+            except Exception as e:
+                self.log.warn('Reinitializing client due to {}'.format(e))
+                self.event.wait(timeout=((index * 100)/1000))
+                index += 1
+
+        if self.cfg.vvv:
+            self.log.debug('Client to {} resolved as {} at {}'.format(self.cfg.host, host_address, self.client.resolved_at))
+
     def exit(self):
         self.gtfo = 1
+        self.event.set()
 

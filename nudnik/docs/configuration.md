@@ -9,6 +9,7 @@ variable name | default | description
 config_file | None | Specify a profile configuration file path
 host | 127.0.0.1 | In server mode, controls the ip that should be binded, in client mode, specifies the server hostname or ip you wish to connect
 port | 5410 | In server mode, controls the port that should be binded, in client mode, specifies the server port you wish to connect
+dns_ttl | 10 | Number of seconds before forcing "host" name lookup
 server | False | If specified, initiate in `server` mode, otherwise default to `client` mode
 name | NAME | In server mode, used for reporting purposes and rejecting messages if `name_mismatch_error` is specified. In client mode, used for reporting purposes and for tagging outgoing messages using the `name` field.
 name_mismatch_error | None | Specifies incoming messages *rejection_by* filter for server mode, avilable values are {`prefix`, `suffix`, `exact`}
@@ -19,6 +20,7 @@ streams | 1 | On Client mode, specifies the number of streams that should send m
 initial_stream_index | 0 | In client mode, specifies the initial `stream_id` number, this value will be incremented by 1 for any additional stream 
 interval | 1 | In client mode, specifies the number of seconds for a message generation cycle, in server mode used for `chaos` calculations and reporting purposes
 rate | 1 | In client mode, specifies the numebr of messages that should be generated on every message generation cycle, in server mode used for `chaos` calculations and reporting purposes
+timeout | 1 | Maximum number of seconds before failing a request
 count | 0 | Specifies the number of messages that should be handeled before exiting, the default 0 value means unlimited messages
 chaos | 0 | Specifies a statistical number of times per hour that this node should fail and exit, In client mode checked on every `interval`, in server mode checked with every incoming message
 load | None | Specifies an artificial load that should be performed with every incoming / outgoing message, avilable values are {`rtt`, `rttr`, `cpu`, `mem`, `bcmd`, `fcmd`}
