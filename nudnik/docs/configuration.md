@@ -30,6 +30,8 @@ ruok | False | Enables *Are you OK?* mode, using the configured `ruok_port` and 
 ruok_host | 127.0.0.1 | Specifies the local ip address that should be binded for `ruok` HTTP requests
 ruok_port | 5310 | Specifies the port that should be binded for `ruok` HTTP requests
 ruok_path | /ruok | Specifies the path that should return a `200 OK` response for the `ruok` backend.
+ruok_headers | [['Content-type', 'application/json']] | Specifies the headers that should be returned with every RUOK request
+ruok_response_format | '{{"status": 200, "timestamp": "{date}" }}' | Specifies the body format that should be returned with every RUOK request
 metrics | None | Enables metrics backend, available modes are {`stdout`, `file`, `influxdb`, `prometheus`}
 metrics_interval | 1 | Specifies `metrics` backend cycle-length in seconds
 metrics_file_path | nudnikmetrics.out | Path to a `metrics` file backend, if enabled

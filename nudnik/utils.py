@@ -62,6 +62,8 @@ DEFAULTS = {
     'ruok_host': '127.0.0.1',
     'ruok_port': 5310,
     'ruok_path': '/ruok',
+    'ruok_headers': [['Content-type', 'application/json']],
+    'ruok_response_format': '{{"status": 200, "timestamp": "{date}" }}',
     'metrics': [],
     'metrics_interval': 1,
     'metrics_file_path': './nudnikmetrics.out',
