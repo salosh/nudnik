@@ -7,8 +7,14 @@ Variables
 variable name | default | description
 -------- | ------- | -----------
 config_file | None | Specify a profile configuration file path
+protocol | grpc | In client mode, specifies the message protocol, use 'http' for REST probes
 host | 127.0.0.1 | In server mode, controls the ip that should be binded, in client mode, specifies the server hostname or ip you wish to connect
 port | 5410 | In server mode, controls the port that should be binded, in client mode, specifies the server port you wish to connect
+path | / | In client mode, specifies the path of a REST probe request
+method | GET | In client mode, specifies the method of a REST probe request
+headers | [['Content-type', 'application/json']] | In client mode, specifies the headers of a REST probe request
+request_format | {{"request": "ping", "timestamp": "{ctime}" }} | In client mode, specifies the body formatting of a REST probe request
+response_format | {{"status": 200, "response": "pong", "timestamp": "{ctime}" }} | WIP
 dns_ttl | 10 | Number of seconds before forcing "host" name lookup
 server | False | If specified, initiate in `server` mode, otherwise default to `client` mode
 name | NAME | In server mode, used for reporting purposes and rejecting messages if `name_mismatch_error` is specified. In client mode, used for reporting purposes and for tagging outgoing messages using the `name` field.

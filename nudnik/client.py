@@ -23,7 +23,7 @@ else:
     import Queue as queue
 import threading
 import socket
-
+import requests
 import grpc
 
 import nudnik
@@ -32,7 +32,6 @@ import nudnik.utils as utils
 class ParserClient(object):
 
     def __init__(self, host, port, timeout):
-        self.resolved_at = utils.time_ns()
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -87,12 +86,34 @@ class Stream(threading.Thread):
                 if (self.cfg.count > 0) and (message_id >= self.cfg.count):
                     self.exit()
                     return
-                request = nudnik.entity_pb2.Request(name=self.cfg.name,
-                                                    stream_id=self.stream_id,
-                                                    sequence_id=sequence_id,
-                                                    message_id=message_id,
-                                                    ctime=utils.time_ns(),
-                                                    load=self.cfg.load_list)
+
+                if self.cfg.protocol == 'grpc':
+                    request = nudnik.entity_pb2.Request(name=self.cfg.name,
+                                                        stream_id=self.stream_id,
+                                                        sequence_id=sequence_id,
+                                                        message_id=message_id,
+                                                        ctime=utils.time_ns(),
+                                                        load=self.cfg.load_list)
+                else:
+                    headers = dict()
+                    for header in self.cfg.headers:
+                        headers.update({str(header[0]): str(header[1])})
+                    data = self.cfg.request_format.format(name=self.cfg.name,
+                                                          stream_id=self.stream_id,
+                                                          sequence_id=sequence_id,
+                                                          message_id=message_id,
+                                                          ctime=utils.time_ns(),
+                                                          load=self.cfg.load_list)
+
+                    req = requests.Request(self.cfg.method, 'http://place_holder', data=data, headers=headers)
+                    request = req.prepare()
+                    request.name = self.cfg.name
+                    request.stream_id=self.stream_id
+                    request.sequence_id=sequence_id
+                    request.message_id=message_id
+                    request.ctime=utils.time_ns()
+                    request.load=self.cfg.load_list
+
                 self.queue.put(request)
 
             if self.cfg.vvv:
@@ -124,22 +145,27 @@ class MessageSender(threading.Thread):
         self.cfg = cfg
         self.log = log
         self.client = None
+        self.host_address = None
+        self.host_resolved_at = 0
+        self.session = requests.Session()
         self.queue = queue
         self.stats = stats
         self.worker_id = worker_id
         self.name = '{}-{}-{}'.format(cfg.name, stream_id, worker_id)
 
     def run(self):
-        self.get_client()
+        if self.cfg.protocol == 'grpc':
+            self.set_client(True)
         self.active_workers.release()
 
         if self.cfg.vv:
             self.log.debug('MessageSender {} initiated'.format(self.name))
 
         while not self.gtfo:
-            resolved_elapsed = utils.diff_seconds(self.client.resolved_at, utils.time_ns())
-            if resolved_elapsed > self.cfg.dns_ttl:
-                self.get_client()
+            if self.cfg.protocol == 'grpc':
+                self.set_client(False)
+            else:
+                self.resolv_host(False)
 
             request = self.queue.get()
             request.worker_id = self.worker_id
@@ -152,32 +178,49 @@ class MessageSender(threading.Thread):
             send_was_successful = False
             while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 request.stime=utils.time_ns()
-                try:
 
-                    meta = self.cfg.meta.format(req=request, node=nudnik.metrics.MetricNode()) if self.cfg.meta is not None else None
-                    request.meta = utils.get_meta(meta, self.cfg.meta_size)
+                meta = self.cfg.meta.format(req=request, node=nudnik.metrics.MetricNode()) if self.cfg.meta is not None else None
+                request.meta = utils.get_meta(meta, self.cfg.meta_size)
 
+                if getattr(request, 'load', None) is not None:
                     for load in request.load:
                         utils.generate_load(self.log, load, meta)
 
-                    response = self.client.get_response_for_request(request)
-                    if self.cfg.vvvvv:
-                        self.log.debug(response)
-                except grpc._channel._Rendezvous as e:
-                    resp = {'status_code': 500}
-                    response = nudnik.entity_pb2.Response(**resp)
-                    self.log.warn('Reinitializing client due to {}'.format(e))
-                    self.get_client()
+                response = None
+                if self.cfg.protocol == 'grpc':
+                    try:
+                        response = self.client.get_response_for_request(request)
+                    except grpc._channel._Rendezvous as e:
+                        resp = {'status_code': 500}
+                        response = nudnik.entity_pb2.Response(**resp)
+                        self.log.warn('Reinitializing client due to {}'.format(e))
+                        self.set_client(True)
+                else:
+                    try:
+                        request.url = '{}://{}:{}{}'.format(self.cfg.protocol, self.host_address, self.cfg.port, self.cfg.path)
+                        response = self.session.send(request)
+                        if response.status_code >= 200 and response.status_code < 300:
+                           response.status_code = 0
+                    except Exception as e:
+                        response = None
+                        self.log.warn('Resending request due to {}'.format(e))
+                        self.resolv_host(True)
+
+                if self.cfg.vvvvv:
+                    self.log.debug(response)
 
                 timestamp = utils.time_ns()
 
-                send_was_successful = ((response.status_code == 0) and (self.stats.get_fail_ratio() >= self.cfg.fail_ratio))
+                send_was_successful = ( (response is not None) and (response.status_code == 0) and (self.stats.get_fail_ratio() >= self.cfg.fail_ratio))
 
                 if send_was_successful:
+                    if self.cfg.vvvvv:
+                        self.log.debug('Request was successful')
                     self.stats.add_success()
                     stat = nudnik.stats.Stat(request, response, timestamp)
                     self.stats.append(stat)
                 else:
+                    self.log.warn('Request was not successful')
                     self.stats.add_failure()
                     try_count -= 1
                     retry_count += 1
@@ -189,23 +232,12 @@ class MessageSender(threading.Thread):
                 if total_rtt > self.cfg.interval:
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 
-    def get_client(self, ipv4=True, ipv6=False):
-        if ipv6 is True:
-            if ipv4 is True:
-                family = 0
-            else:
-                family = 10
-        else:
-            family = 2
+    def set_client(self, force):
+        resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
+        if resolved_elapsed < self.cfg.dns_ttl and force is False:
+            return
 
-        addresses = []
-        index = 0
-        while len(addresses) < 1:
-            addresses = socket.getaddrinfo(self.cfg.host, self.cfg.port, family, 1)
-            self.event.wait(timeout=((index * 100)/1000))
-            index += 1
-
-        host_address = addresses[random.randint(0, (len(addresses) - 1))][-1][0]
+        self.resolv_host(True)
         self.client = None
         index = 0
         while self.client is None:
@@ -217,7 +249,34 @@ class MessageSender(threading.Thread):
                 index += 1
 
         if self.cfg.vvv:
-            self.log.debug('Client to {} resolved as {} at {}'.format(self.cfg.host, host_address, self.client.resolved_at))
+            self.log.debug('Client to {} initialized'.format(host_address))
+
+    def resolv_host(self, force):
+        resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
+        if resolved_elapsed < self.cfg.dns_ttl and force is False:
+            return
+
+        ipv4=True
+        ipv6=False
+        if ipv6 is True:
+            if ipv4 is True:
+                family = 0
+            else:
+                family = 10
+        else:
+            family = 2
+
+        addresses = []
+        index = 0
+        while len(addresses) < 1:
+            addresses = socket.getaddrinfo(self.cfg.host, 0, family, 1)
+            self.event.wait(timeout=((index * 100)/1000))
+            index += 1
+
+        self.host_address = addresses[random.randint(0, (len(addresses) - 1))][-1][0]
+        self.host_resolved_at = utils.time_ns()
+        if self.cfg.vvv:
+            self.log.debug('Host {} resolved as {}'.format(self.cfg.host, self.host_address))
 
     def exit(self):
         self.gtfo = 1
