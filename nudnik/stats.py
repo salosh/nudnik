@@ -21,6 +21,8 @@ import nudnik.utils as utils
 import nudnik.outputs
 import nudnik.metrics
 
+import requests.models
+
 class Stats(threading.Thread):
 
     def __init__(self, cfg):
@@ -154,13 +156,28 @@ class Stat(utils.NudnikObject):
 
 def _parse_stats(log, mode, stats, format, retransmit_format):
     for stat in stats:
-        if stat.request.rcount == 0:
+        if getattr(stat.request, 'rcount', None) is None or stat.request.rcount == 0:
             dataformat = format
         else:
             dataformat = retransmit_format
 
         try:
-            statstring = dataformat.format(timestamp_str=str(stat.timestamp),
+            if type(stat.request) == requests.models.PreparedRequest:
+                statstring = dataformat.format(timestamp_str=str(stat.timestamp),
+                                           timestamp=stat.timestamp,
+                                           mode=mode,
+                                           node=nudnik.metrics.MetricNode(),
+                                           req=stat.request,
+                                           res=stat.response,
+                                           cdelta=utils.diff_nanoseconds(stat.request.ctime, stat.request.stime),
+                                           rdelta=utils.diff_nanoseconds(getattr(stat.request, 'rtime', 0), stat.request.stime),
+                                           sdelta=utils.diff_nanoseconds(stat.request.stime, getattr(stat.response, 'ctime', 0)),
+                                           ldelta=utils.diff_nanoseconds(getattr(stat.response, 'ctime', 0), getattr(stat.response, 'ltime', 0)),
+                                           pdelta=utils.diff_nanoseconds(getattr(stat.response, 'ltime', 0), getattr(stat.response, 'stime', 0)),
+                                           bdelta=utils.diff_nanoseconds(getattr(stat.response, 'stime', 0), stat.timestamp),
+                                           rtt=utils.diff_nanoseconds(stat.request.ctime, stat.timestamp))
+            else:
+                statstring = dataformat.format(timestamp_str=str(stat.timestamp),
                                            timestamp=stat.timestamp,
                                            mode=mode,
                                            node=nudnik.metrics.MetricNode(),
