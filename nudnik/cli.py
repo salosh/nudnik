@@ -19,7 +19,7 @@ import sys
 
 import nudnik.stats
 import nudnik.metrics
-import nudnik.server
+import nudnik.grpc_server
 import nudnik.client
 import nudnik.utils as utils
 
@@ -54,7 +54,7 @@ def main():
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.server.ParseService(cfg, statsthread)
+        server = nudnik.grpc_server.ParseService(cfg, statsthread)
         server.start_server()
 
     else:

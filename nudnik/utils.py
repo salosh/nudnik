@@ -38,8 +38,14 @@ _BILLION = float(10**9)
 
 DEFAULTS = {
     'config_file': '',
+    'protocol': 'grpc',
     'host': '127.0.0.1',
     'port': 5410,
+    'path': '/',
+    'method': 'GET',
+    'headers': [['Content-type', 'application/json']],
+    'request_format': '{{"request": "ping", "timestamp": "{ctime}" }}',
+    'response_format': '{{"status": 200, "response": "pong", "timestamp": "{ctime}" }}',
     'dns_ttl': 10,
     'server': False,
     'name': 'NAME',
