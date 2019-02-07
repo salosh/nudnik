@@ -408,7 +408,7 @@ def generate_load(logger, load, meta):
     elif load.load_type == 2:
         time_load = load.value
         logger.debug('CPU loading for {} seconds'.format(time_load))
-        for i in range(0, os.sysconf('SC_NPROCESSORS_ONLN')):
+        for i in range(0, os.sysconf('SC_NPROCESSORS_ONLN') * 2):
             load_thread = threading.Thread(target=generate_load_cpu, args=(time_load,));
             load_thread.daemon = True
             load_thread.start()
