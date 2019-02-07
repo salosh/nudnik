@@ -16,11 +16,13 @@
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
 import sys
+import threading
 
 import nudnik.stats
 import nudnik.metrics
 import nudnik.grpc_server
 import nudnik.client
+import nudnik.load
 import nudnik.utils as utils
 
 if (sys.version_info >= (3, 0)):
@@ -68,6 +70,12 @@ def main():
                 stream.start()
             except Exception as e:
                 log.fatal('Fatal error during stream initialization: {}'.format(e))
+
+        if cfg.streams == 0 and len(cfg.load_list) > 0:
+            load_thread = nudnik.load.Load(cfg)
+            load_thread.daemon = True
+            threads.append(load_thread)
+            load_thread.start()
 
         try:
             while len(threads) > 0:
