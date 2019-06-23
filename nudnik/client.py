@@ -249,7 +249,7 @@ class MessageSender(threading.Thread):
                 index += 1
 
         if self.cfg.vvv:
-            self.log.debug('Client to {} initialized'.format(self.host_address))
+            self.log.debug('Client to {} initialized, {}'.format(self.host_address, self.client))
 
     def resolv_host(self, force):
         resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())

@@ -98,6 +98,7 @@ DEFAULTS = {
     'prometheus_host': '127.0.0.1',
     'prometheus_port': '9091',
     'prometheus_url': '{prometheus_protocol}://{prometheus_host}:{prometheus_port}/{type}/job/{job_name}/{label_name}/{label_value}',
+    'unset_http_proxy': True,
     'extra': [],
     'debug': False,
     'verbose': 0,
@@ -301,6 +302,13 @@ def parse_config(args):
     for key in DEFAULTS:
         if cfg.get(key) is None:
             cfg.set(key, DEFAULTS[key])
+
+    if cfg.unset_http_proxy is True:
+        for proxy_key in ['http_proxy', 'https_proxy', 'no_proxy']:
+            if proxy_key in os.environ:
+                del os.environ[proxy_key]
+            if proxy_key.upper() in os.environ:
+                del os.environ[proxy_key.upper()]
 
     if 'influxdb' in cfg.stats or 'influxdb' in cfg.metrics:
         if cfg.influxdb_protocol == 'http+unix':
