@@ -242,14 +242,14 @@ class MessageSender(threading.Thread):
         index = 0
         while self.client is None:
             try:
-                self.client = ParserClient(host_address, self.cfg.port, self.cfg.timeout)
+                self.client = ParserClient(self.host_address, self.cfg.port, self.cfg.timeout)
             except Exception as e:
                 self.log.warn('Reinitializing client due to {}'.format(e))
                 self.event.wait(timeout=((index * 100)/1000))
                 index += 1
 
         if self.cfg.vvv:
-            self.log.debug('Client to {} initialized'.format(host_address))
+            self.log.debug('Client to {} initialized'.format(self.host_address))
 
     def resolv_host(self, force):
         resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
