@@ -22,13 +22,17 @@ import os
 import sys
 import threading
 import subprocess
+import socket
 import time
 import re
+import uuid
 from datetime import datetime
 import random
 
 if sys.version_info < (3, 0):
     from exceptions import IOError as FileNotFoundError
+
+import etcd3
 
 import nudnik
 from nudnik.entity_pb2 import Load
@@ -88,6 +92,8 @@ DEFAULTS = {
     'stats_format_retransmit_influxdb': '{mode},hostname={node.nodename},status={res.status_code},name={req.name},sid={req.stream_id},wid={req.worker_id},qid={req.sequence_id} sid={req.stream_id},wid={req.worker_id},mid={req.message_id},ctime={req.ctime},rtime={req.rtime},cdelta={cdelta},sdelta={sdelta},pdelta={pdelta},bdelta={bdelta},rdelta={rdelta},rcount={req.rcount},rtt={rtt} {timestamp}',
     'stats_format_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
     'stats_format_retransmit_prometheus': '# TYPE nudnik_message summary\nnudnik_message{{ctime="{req.ctime}",message_id="{req.message_id}", rtt="{rtt}", name="{req.name}"}} {timestamp}\n',
+    'etcd_format_key_request': '/nudnik/request/{name}',
+    'etcd_format_key_response': '/nudnik/response/{name}',
     'influxdb_socket_path': '/var/run/influxdb/influxdb.sock',
     'influxdb_protocol': 'http+unix',
     'influxdb_host': '127.0.0.1',
@@ -182,6 +188,10 @@ def parse_args():
     parser.add_argument('--port', '-p',
                         type=int,
                         help='port')
+    parser.add_argument('--protocol', '-P',
+                        type=str,
+                        choices=['grpc', 'etcd', 'http'],
+                        help='Nudnik messaging protocol')
     parser.add_argument('--dns-ttl',
                         type=int,
                         help='Number of seconds before forcing "host" name lookup (Default: 10)')
@@ -482,6 +492,7 @@ def time_to_date(timestamp):
     return datetime.fromtimestamp( timestamp / _BILLION )
 
 class ChaosException(Exception): pass
+class NameMismatchException(Exception): pass
 
 class NudnikObject(object):
 
@@ -503,3 +514,132 @@ class NudnikObject(object):
             if not key.startswith('_'):
                 csv.append('{k}="{v}"'.format(k=key, v=getattr(self, key)))
         return ','.join(csv)
+
+
+def set_grpc_client(self, force):
+    resolved_elapsed = diff_seconds(self.host_resolved_at, time_ns())
+    if resolved_elapsed < self.cfg.dns_ttl and force is False:
+        return
+
+    resolv_host(self, True)
+    self.client = None
+    index = 0
+    while self.client is None:
+        try:
+            self.client = ParserClient(self.host_address, self.cfg.port, self.cfg.timeout)
+        except Exception as e:
+            self.log.warn('Reinitializing gRPC client due to {}'.format(e))
+            self.event.wait(timeout=((index * 100)/1000))
+            index += 1
+
+    if self.cfg.vvv:
+        self.log.debug('gRPC Client to {} initialized, {}'.format(self.host_address, self.client))
+
+def set_etcd_client(self, force):
+    resolved_elapsed = diff_seconds(self.host_resolved_at, time_ns())
+    if resolved_elapsed < self.cfg.dns_ttl and force is False:
+        return
+
+    resolv_host(self, True)
+    self.client = None
+    index = 0
+    while self.client is None and self.gtfo is False:
+        try:
+            self.event.wait(timeout=((index * 100)/1000))
+#                self.client = etcd3.client(host=self.host_address, port=self.cfg.port, ca_cert=self.cfg.etcd_cacert, cert_cert=self.cfg.etcd_cert, cert_key=self.cfg.etcd_key)
+            client = etcd3.client(host=self.host_address, port=self.cfg.port)
+            time_now = str(datetime.now())
+            verification_key = '/nudnik/verification/{}'.format(uuid.uuid4())
+            client.put(verification_key, time_now)
+            verification_value = client.get(verification_key)[0]
+            if (verification_value == time_now):
+                client.delete(verification_key)
+                self.client = client
+            else:
+                self.log.warn('Key {} verification failed - "{}" != "{}"'.format(verification_key, verification_value, time_now))
+        except etcd3.exceptions.ConnectionFailedError:
+            self.log.warn('Failed to initialize Etcd client to "{}:{}"'.format(self.host_address, self.cfg.port))
+        except Exception as e:
+            self.log.warn('Failed initializing Etcd client "{}"'.format(e))
+        finally:
+            index += 1
+
+    if self.cfg.vvv and self.client:
+        self.log.debug('Etcd Client to {} initialized, {}'.format(self.host_address, self.client))
+
+def resolv_host(self, force):
+    resolved_elapsed = diff_seconds(self.host_resolved_at, time_ns())
+    if resolved_elapsed < self.cfg.dns_ttl and force is False:
+        return
+
+    ipv4=True
+    ipv6=False
+    if ipv6 is True:
+        if ipv4 is True:
+            family = 0
+        else:
+            family = 10
+    else:
+        family = 2
+
+    addresses = []
+    index = 0
+    while len(addresses) < 1:
+        addresses = socket.getaddrinfo(self.cfg.host, 0, family, 1)
+        for idx in range(0, index):
+            self.event.wait(timeout=((100)/1000))
+        index += 1
+
+    self.host_address = addresses[random.randint(0, (len(addresses) - 1))][-1][0]
+    self.host_resolved_at = time_ns()
+    if self.cfg.vvv:
+        self.log.debug('Host {} resolved as {}'.format(self.cfg.host, self.host_address))
+
+def parse_request(self, request, timestamp):
+    if self.cfg.vvvvv:
+        self.log.debug(request)
+
+    # Generate fake load for incoming request
+    for load in self.cfg.load_list:
+        generate_load(self.log, load, request.meta)
+
+    ltime = time_ns()
+
+    cdelta = diff_nanoseconds(request.ctime, timestamp)
+
+    # Calculate retransimt-delta
+    if request.rtime != 0:
+        rdelta = diff_nanoseconds(request.rtime, timestamp)
+    else:
+        rdelta = 0
+
+    if self.cfg.name_mismatch_error == 'prefix':
+        if not request.name.startswith(self.cfg.name):
+            self.exit()
+            raise NameMismatchException('Client name "{}" must match server prefix "{}"'.format(request.name, self.cfg.name))
+    elif self.cfg.name_mismatch_error == 'suffix':
+        if not request.name.endswith(self.cfg.name):
+            self.exit()
+            raise NameMismatchException('Client name "{}" must match server suffix "{}"'.format(request.name, self.cfg.name))
+    elif self.cfg.name_mismatch_error == 'exact':
+        if not request.name == self.cfg.name:
+            self.exit()
+            raise NameMismatchException('Client name "{}" must exactly match server name "{}"'.format(request.name, self.cfg.name))
+
+    if (self.stats.get_fail_ratio() >= self.cfg.fail_ratio):
+        self.stats.add_success()
+        status_code = 'OK'
+    else:
+        self.stats.add_failure()
+        status_code = 'SERVER_ERROR'
+
+    if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
+        chaos_exception = ChaosException(self.cfg.chaos_string)
+        self.log.fatal(chaos_exception)
+        self.exit()
+        raise chaos_exception
+
+    response = {'status_code': status_code, 'ctime': timestamp, 'ltime': ltime, 'stime': time_ns(), 'meta': get_meta(self.cfg.meta, self.cfg.meta_size)}
+
+    return response
+
