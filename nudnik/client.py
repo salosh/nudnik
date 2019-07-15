@@ -15,6 +15,7 @@
 #    along with Nudnik.  If not, see <http://www.gnu.org/licenses/>.
 #
 import time
+from datetime import datetime
 import sys
 import random
 if (sys.version_info >= (3, 0)):
@@ -22,9 +23,10 @@ if (sys.version_info >= (3, 0)):
 else:
     import Queue as queue
 import threading
-import socket
 import requests
+
 import grpc
+import etcd3
 
 import nudnik
 import nudnik.utils as utils
@@ -52,7 +54,7 @@ class Stream(threading.Thread):
         threading.Thread.__init__(self)
         self.gtfo = False
         self.event = threading.Event()
-
+        self.workers = []
         self.cfg = cfg
         self.log = utils.get_logger(cfg.debug)
         self.stream_id = stream_id
@@ -71,6 +73,7 @@ class Stream(threading.Thread):
             active_workers.acquire()
             thread = MessageSender(self.cfg, self.log, self.stream_id, worker_id, active_workers, self.queue, self.stats)
             thread.daemon = True
+            self.workers.append(thread)
             thread.start()
 
         # Wait for all workers to initialize clients
@@ -87,7 +90,7 @@ class Stream(threading.Thread):
                     self.exit()
                     return
 
-                if self.cfg.protocol == 'grpc':
+                if self.cfg.protocol in ['grpc', 'etcd']:
                     request = nudnik.entity_pb2.Request(name=self.cfg.name,
                                                         stream_id=self.stream_id,
                                                         sequence_id=sequence_id,
@@ -135,12 +138,29 @@ class Stream(threading.Thread):
         self.gtfo = 1
         self.event.set()
 
+        while len(self.workers) > 0:
+            try:
+                for index, worker in enumerate(self.workers):
+                    if self.cfg.vvvvv:
+                        self.log.debug('Waiting for worker {} {} gtfo: {}'.format(index, worker, worker.gtfo))
+                    if not worker.is_alive():
+                        self.workers.pop(index)
+                    else:
+                        worker.exit()
+                        worker.join(0.25)
+            except KeyboardInterrupt:
+                for worker in self.workers:
+                    self.log.debug('Aborting worker {} ({})'.format(worker, worker.gtfo))
+                    worker.exit()
+
+
 class MessageSender(threading.Thread):
 
     def __init__(self, cfg, log, stream_id, worker_id, active_workers, queue, stats):
         threading.Thread.__init__(self)
         self.gtfo = False
         self.event = threading.Event()
+        self.lock = threading.Semaphore(1)
         self.active_workers = active_workers
         self.cfg = cfg
         self.log = log
@@ -153,21 +173,43 @@ class MessageSender(threading.Thread):
         self.worker_id = worker_id
         self.name = '{}-{}-{}'.format(cfg.name, stream_id, worker_id)
 
+
+    def watch_callback_key_release(self, event):
+        if type(event) == etcd3.events.PutEvent:
+            self.lock.release()
+
     def run(self):
         if self.cfg.protocol == 'grpc':
-            self.set_client(True)
+            utils.set_grpc_client(self, True)
+        elif self.cfg.protocol == 'etcd':
+            request_prefix = self.cfg.etcd_format_key_request.format(name=self.cfg.name)
+            response_prefix = self.cfg.etcd_format_key_response.format(name=self.cfg.name)
+            utils.set_etcd_client(self, True)
+
         self.active_workers.release()
 
-        if self.cfg.vv:
+        if self.cfg.vv and self.client:
             self.log.debug('MessageSender {} initiated'.format(self.name))
 
         while not self.gtfo:
-            if self.cfg.protocol == 'grpc':
-                self.set_client(False)
-            else:
-                self.resolv_host(False)
+            timestamp = None
 
-            request = self.queue.get()
+            if self.cfg.protocol == 'grpc':
+                utils.set_grpc_client(self, False)
+            elif self.cfg.protocol == 'etcd':
+                utils.set_etcd_client(self, False)
+            else:
+                utils.resolv_host(self, False)
+
+            request = None
+            while request is None:
+                if self.gtfo:
+                    return
+                try:
+                    request = self.queue.get(block=True, timeout=0.2)
+                except queue.Empty:
+                    pass
+
             request.worker_id = self.worker_id
 
             if self.cfg.vvvvv:
@@ -176,7 +218,7 @@ class MessageSender(threading.Thread):
             retry_count = 0
             try_count = 1 + self.cfg.retry_count
             send_was_successful = False
-            while (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
+            while not self.gtfo and (not send_was_successful and ((self.cfg.retry_count < 0) or (try_count > 0))):
                 request.stime=utils.time_ns()
 
                 meta = self.cfg.meta.format(req=request, node=nudnik.metrics.MetricNode()) if self.cfg.meta is not None else None
@@ -193,8 +235,35 @@ class MessageSender(threading.Thread):
                     except grpc._channel._Rendezvous as e:
                         resp = {'status_code': 500}
                         response = nudnik.entity_pb2.Response(**resp)
-                        self.log.warn('Reinitializing client due to {}'.format(e))
-                        self.set_client(True)
+                        self.log.warn('Reinitializing gRPC client due to {}'.format(e))
+                        utils.set_grpc_client(self, True)
+
+                elif self.cfg.protocol == 'etcd':
+                    try:
+                        if self.cfg.vvv:
+                            self.log.debug('Etcd request: {}'.format(request))
+                        key = '{}/{}/{}'.format(self.cfg.etcd_format_key_request.format(name=request.name), request.sequence_id, request.message_id)
+                        value = request.SerializeToString()
+                        if self.cfg.vvvvv:
+                            self.log.debug('Writing {} => {}'.format(key, value))
+                        self.client.put(key, value)
+                        response_key = key.replace(request_prefix, response_prefix, 1)
+                        watch_id = self.client.add_watch_callback(response_key, self.watch_callback_key_release)
+                        self.lock.acquire()
+                        if self.cfg.vvvvv:
+                            self.log.debug('Waiting for response at "{}"'.format(response_key))
+                        with self.lock:
+                            self.client.cancel_watch(watch_id)
+                            resp = self.client.get(response_key)
+                            response = nudnik.entity_pb2.Response()
+                            response.ParseFromString(resp[0])
+                            self.client.delete(response_key)
+                    except Exception as e:
+                        resp = {'status_code': 500}
+                        response = nudnik.entity_pb2.Response(**resp)
+                        self.log.warn('Reinitializing Etcd client due to "{}"'.format(e))
+                        utils.set_etcd_client(self, True)
+
                 else:
                     try:
                         request.url = '{}://{}:{}{}'.format(self.cfg.protocol, self.host_address, self.cfg.port, self.cfg.path)
@@ -204,7 +273,7 @@ class MessageSender(threading.Thread):
                     except Exception as e:
                         response = None
                         self.log.warn('Resending request due to {}'.format(e))
-                        self.resolv_host(True)
+                        utils.resolv_host(self, True)
 
                 if self.cfg.vvvvv:
                     self.log.debug(response)
@@ -227,58 +296,16 @@ class MessageSender(threading.Thread):
                     request.rtime=utils.time_ns()
                     request.rcount = retry_count
 
-            if self.cfg.vv:
+            if self.cfg.vv and timestamp is not None:
                 total_rtt = utils.diff_seconds(request.ctime, timestamp) * self.cfg.rate
                 if total_rtt > self.cfg.interval:
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 
-    def set_client(self, force):
-        resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
-        if resolved_elapsed < self.cfg.dns_ttl and force is False:
-            return
-
-        self.resolv_host(True)
-        self.client = None
-        index = 0
-        while self.client is None:
-            try:
-                self.client = ParserClient(self.host_address, self.cfg.port, self.cfg.timeout)
-            except Exception as e:
-                self.log.warn('Reinitializing client due to {}'.format(e))
-                self.event.wait(timeout=((index * 100)/1000))
-                index += 1
-
-        if self.cfg.vvv:
-            self.log.debug('Client to {} initialized, {}'.format(self.host_address, self.client))
-
-    def resolv_host(self, force):
-        resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
-        if resolved_elapsed < self.cfg.dns_ttl and force is False:
-            return
-
-        ipv4=True
-        ipv6=False
-        if ipv6 is True:
-            if ipv4 is True:
-                family = 0
-            else:
-                family = 10
-        else:
-            family = 2
-
-        addresses = []
-        index = 0
-        while len(addresses) < 1:
-            addresses = socket.getaddrinfo(self.cfg.host, 0, family, 1)
-            self.event.wait(timeout=((index * 100)/1000))
-            index += 1
-
-        self.host_address = addresses[random.randint(0, (len(addresses) - 1))][-1][0]
-        self.host_resolved_at = utils.time_ns()
-        if self.cfg.vvv:
-            self.log.debug('Host {} resolved as {}'.format(self.cfg.host, self.host_address))
+        self.log.debug('{} has left the building'.format(self))
 
     def exit(self):
         self.gtfo = 1
         self.event.set()
-
+        if self.lock:
+            self.lock.release()
+            self.lock = None

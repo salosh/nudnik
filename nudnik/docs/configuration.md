@@ -7,7 +7,7 @@ Variables
 variable name | default | description
 -------- | ------- | -----------
 config_file | None | Specify a profile configuration file path
-protocol | grpc | In client mode, specifies the message protocol, use 'http' for REST probes
+protocol | grpc | Specifies the message protocol, use 'http' for REST probes, available options are {'grpc', 'etcd', 'http'}
 host | 127.0.0.1 | In server mode, controls the ip that should be binded, in client mode, specifies the server hostname or ip you wish to connect
 port | 5410 | In server mode, controls the port that should be binded, in client mode, specifies the server port you wish to connect
 path | / | In client mode, specifies the path of a REST probe request
@@ -64,6 +64,7 @@ influxdb_database_prefix | nudnik | Specifies database name prefix for InfluxDB 
 prometheus_protocol | http | Specifies protocol to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
 prometheus_host | 127.0.0.1 | Specifies host to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
 prometheus_port | 9091 | Specifies port to Prometheus pushgateway connection for both `stats` and `metrics` backends if enabled
+unset_http_proxy | True | Unset HTTP proxy related environment variables for this process, prevents issues with most organizational proxies, which do not handle gRPC calls correctly
 debug | False | Decreases log level to debug.
 verbose | 0 | Enables extra verbosity, via command line specify multiple time (<6) for extra verbosity (e.g. `nudnik -vvvvvv`), via config file or environment variable specify a number (e.g. `export NUDNIK_VERBOSE=6`)
 

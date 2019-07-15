@@ -1,4 +1,5 @@
 PyYAML>=5.1.1
+etcd3>=0.8.1
 grpcio>=1.21.1
 protobuf>=3.8.0
 #grpcio-tools>=1.16.1
