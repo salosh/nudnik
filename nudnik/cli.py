@@ -21,6 +21,7 @@ import threading
 import nudnik.stats
 import nudnik.metrics
 import nudnik.grpc_server
+import nudnik.etcd_server
 import nudnik.client
 import nudnik.load
 import nudnik.utils as utils
@@ -56,8 +57,14 @@ def main():
 
     if cfg.server:
         log.debug('Running Nudnik in server mode')
-        server = nudnik.grpc_server.ParseService(cfg, statsthread)
-        server.start_server()
+        if cfg.protocol == 'grpc':
+            server = nudnik.grpc_server.ParseService(cfg, statsthread)
+            server.start_server()
+        elif cfg.protocol == 'etcd':
+            server = nudnik.etcd_server.Server(cfg, statsthread)
+            server.daemon = True
+            threads.append(server)
+            server.start()
 
     else:
         log.debug('Running Nudnik in client mode')
@@ -77,20 +84,24 @@ def main():
             threads.append(load_thread)
             load_thread.start()
 
-        try:
-            while len(threads) > 0:
-                for index, stream in enumerate(threads):
-                    if stream.gtfo or not stream.is_alive():
-                        threads.pop(index)
-                    else:
-                        stream.join(0.25)
-        except KeyboardInterrupt:
-            for s in threads:
-                s.exit()
+    try:
+        while len(threads) > 0:
+            if cfg.vvvvv:
+                log.debug('Waiting for {} threads'.format(len(threads)))
+
+            for index, stream in enumerate(threads):
+                if cfg.vvvvv:
+                    log.debug('Waiting for thread, idx: {} repr: {}'.format(index, stream))
+                if stream.gtfo or not stream.is_alive():
+                    threads.pop(index)
+                else:
+                    stream.join(0.25)
+    except KeyboardInterrupt:
+        for s in threads:
+            s.exit()
 
     log.debug('You are the weakest link, goodbye!'.format(''))
     return 1
 
 if __name__ == "__main__":
     sys.exit(main())
-

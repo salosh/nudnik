@@ -36,57 +36,12 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
         self.stats = stats
 
     def parse(self, request, context):
-
         timestamp = utils.time_ns()
-
-        if self.cfg.vvvvv:
-            self.log.debug(request)
-
-        # Generate fake load for incoming request
-        for load in self.cfg.load_list:
-            utils.generate_load(self.log, load, request.meta)
-
-        ltime = utils.time_ns()
-
-        cdelta = utils.diff_nanoseconds(request.ctime, timestamp)
-
-        # Calculate retransimt-delta
-        if request.rtime != 0:
-            rdelta = utils.diff_nanoseconds(request.rtime, timestamp)
-        else:
-            rdelta = 0
-
-        if self.cfg.name_mismatch_error == 'prefix':
-            if not request.name.startswith(self.cfg.name):
-                self.exit()
-                raise NameMismatchException('Client name "{}" must match server prefix "{}"'.format(request.name, self.cfg.name))
-        elif self.cfg.name_mismatch_error == 'suffix':
-            if not request.name.endswith(self.cfg.name):
-                self.exit()
-                raise NameMismatchException('Client name "{}" must match server suffix "{}"'.format(request.name, self.cfg.name))
-        elif self.cfg.name_mismatch_error == 'exact':
-            if not request.name == self.cfg.name:
-                self.exit()
-                raise NameMismatchException('Client name "{}" must exactly match server name "{}"'.format(request.name, self.cfg.name))
-
-        if (self.stats.get_fail_ratio() >= self.cfg.fail_ratio):
-            self.stats.add_success()
-            status_code = 'OK'
-        else:
-            self.stats.add_failure()
-            status_code = 'SERVER_ERROR'
-
-        response = {'status_code': status_code, 'ctime': timestamp, 'ltime': ltime, 'stime': utils.time_ns(), 'meta': utils.get_meta(self.cfg.meta, self.cfg.meta_size)}
+        response = utils.parse_request(self, request, timestamp)
         grpc_response = nudnik.entity_pb2.Response(**response)
 
         stat = nudnik.stats.Stat(request, grpc_response, timestamp)
         self.stats.append(stat)
-
-        if self.cfg.chaos > 0 and random.randint(0, self.cfg.cycle_per_hour) <= self.cfg.chaos:
-            chaos_exception = utils.ChaosException(self.cfg.chaos_string)
-            self.log.fatal(chaos_exception)
-            self.exit()
-            raise chaos_exception
 
         return grpc_response
 
@@ -111,5 +66,3 @@ class ParseService(nudnik.entity_pb2_grpc.ParserServicer):
 
     def exit(self):
         self.event.set()
-
-class NameMismatchException(Exception): pass
