@@ -180,7 +180,7 @@ class MessageSender(threading.Thread):
 
     def run(self):
         if self.cfg.protocol == 'grpc':
-            utils.set_grpc_client(self, True)
+            self.set_grpc_client(True)
         elif self.cfg.protocol == 'etcd':
             request_prefix = self.cfg.etcd_format_key_request.format(name=self.cfg.name)
             response_prefix = self.cfg.etcd_format_key_response.format(name=self.cfg.name)
@@ -195,7 +195,7 @@ class MessageSender(threading.Thread):
             timestamp = None
 
             if self.cfg.protocol == 'grpc':
-                utils.set_grpc_client(self, False)
+                self.set_grpc_client(False)
             elif self.cfg.protocol == 'etcd':
                 utils.set_etcd_client(self, False)
             else:
@@ -236,7 +236,7 @@ class MessageSender(threading.Thread):
                         resp = {'status_code': 500}
                         response = nudnik.entity_pb2.Response(**resp)
                         self.log.warn('Reinitializing gRPC client due to {}'.format(e))
-                        utils.set_grpc_client(self, True)
+                        self.set_grpc_client(True)
 
                 elif self.cfg.protocol == 'etcd':
                     try:
@@ -302,6 +302,25 @@ class MessageSender(threading.Thread):
                     self.log.warn('Predicted total rtt {} for rate {} exceeds interval {}'.format(total_rtt, self.cfg.rate, self.cfg.interval))
 
         self.log.debug('{} has left the building'.format(self))
+
+    def set_grpc_client(self, force):
+        resolved_elapsed = utils.diff_seconds(self.host_resolved_at, utils.time_ns())
+        if resolved_elapsed < self.cfg.dns_ttl and force is False:
+            return
+
+        utils.resolv_host(self, True)
+        self.client = None
+        index = 0
+        while self.client is None:
+            try:
+                self.client = ParserClient(self.host_address, self.cfg.port, self.cfg.timeout)
+            except Exception as e:
+                self.log.warn('Reinitializing gRPC client due to {}'.format(e))
+                self.event.wait(timeout=((index * 100)/1000))
+                index += 1
+
+        if self.cfg.vvv:
+            self.log.debug('gRPC Client to {} initialized, {}'.format(self.host_address, self.client))
 
     def exit(self):
         self.gtfo = 1
