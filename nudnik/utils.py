@@ -515,26 +515,6 @@ class NudnikObject(object):
                 csv.append('{k}="{v}"'.format(k=key, v=getattr(self, key)))
         return ','.join(csv)
 
-
-def set_grpc_client(self, force):
-    resolved_elapsed = diff_seconds(self.host_resolved_at, time_ns())
-    if resolved_elapsed < self.cfg.dns_ttl and force is False:
-        return
-
-    resolv_host(self, True)
-    self.client = None
-    index = 0
-    while self.client is None:
-        try:
-            self.client = ParserClient(self.host_address, self.cfg.port, self.cfg.timeout)
-        except Exception as e:
-            self.log.warn('Reinitializing gRPC client due to {}'.format(e))
-            self.event.wait(timeout=((index * 100)/1000))
-            index += 1
-
-    if self.cfg.vvv:
-        self.log.debug('gRPC Client to {} initialized, {}'.format(self.host_address, self.client))
-
 def set_etcd_client(self, force):
     resolved_elapsed = diff_seconds(self.host_resolved_at, time_ns())
     if resolved_elapsed < self.cfg.dns_ttl and force is False:
@@ -642,4 +622,3 @@ def parse_request(self, request, timestamp):
     response = {'status_code': status_code, 'ctime': timestamp, 'ltime': ltime, 'stime': time_ns(), 'meta': get_meta(self.cfg.meta, self.cfg.meta_size)}
 
     return response
-
